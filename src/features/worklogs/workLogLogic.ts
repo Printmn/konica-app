@@ -54,13 +54,33 @@ export const visibleWorkLogs = (
   archiveDate: string | null,
   today: string = todayString(),
 ): WorkLog[] => {
-  if (archiveDate) return workLogs.filter((log) => log.date === archiveDate);
-  return workLogs.filter(
-    (log) =>
-      log.date === today ||
-      (log.date < today && log.status !== 'Болсон' && log.status !== 'Болсон аваагүй'),
-  );
+  const rows = archiveDate
+    ? workLogs.filter((log) => log.date === archiveDate)
+    : workLogs.filter(
+        (log) =>
+          log.date === today ||
+          (log.date < today && log.status !== 'Болсон' && log.status !== 'Болсон аваагүй'),
+      );
+  return newestFirst(rows);
 };
+
+/**
+ * Newest booking at the top.
+ *
+ * A new job is prepended locally, so it looks right until the next sync — and
+ * then Firebase hands the collection back in its own order and the board
+ * reshuffles. Sorting here means the order is the same on both devices, after
+ * a reload, and the moment a job is booked.
+ *
+ * Within a day the day's own sequence number decides, falling back to the id
+ * for rows booked before numbering existed.
+ */
+const newestFirst = (rows: readonly WorkLog[]): WorkLog[] =>
+  [...rows].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    const byNumber = (Number(b.no) || 0) - (Number(a.no) || 0);
+    return byNumber !== 0 ? byNumber : b.id - a.id;
+  });
 
 /** Distinct dates present in the log set, newest first. */
 export const archiveDates = (workLogs: readonly WorkLog[]): string[] =>

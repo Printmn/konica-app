@@ -291,6 +291,46 @@ describe('visibleWorkLogs', () => {
   });
 
   it('shows exactly one day when an archive date is chosen', () => {
-    expect(visibleWorkLogs(logs, '2026-08-03', '2026-08-04').map((l) => l.id)).toEqual([2, 3]);
+    expect(visibleWorkLogs(logs, '2026-08-03', '2026-08-04').map((l) => l.id)).toEqual([3, 2]);
+  });
+});
+
+/**
+ * A new job is prepended locally, so the board looks right until the next sync
+ * — then Firebase hands the collection back in its own order and everything
+ * reshuffles. Sorting on read is what keeps the two devices agreeing.
+ */
+describe('the board is ordered newest first', () => {
+  it('puts the latest booking of the day at the top', () => {
+    const day = [
+      log({ id: 1, no: 1, date: '2026-08-04' }),
+      log({ id: 2, no: 3, date: '2026-08-04' }),
+      log({ id: 3, no: 2, date: '2026-08-04' }),
+    ];
+    expect(visibleWorkLogs(day, null, '2026-08-04').map((l) => l.no)).toEqual([3, 2, 1]);
+  });
+
+  it('keeps today above work carried over from earlier days', () => {
+    const rows = [
+      log({ id: 1, no: 5, date: '2026-08-03', status: '' }),
+      log({ id: 2, no: 1, date: '2026-08-04' }),
+    ];
+    expect(visibleWorkLogs(rows, null, '2026-08-04').map((l) => l.id)).toEqual([2, 1]);
+  });
+
+  it('falls back to the id for rows booked before numbering existed', () => {
+    const unnumbered = [
+      log({ id: 10, date: '2026-08-04' }),
+      log({ id: 40, date: '2026-08-04' }),
+      log({ id: 20, date: '2026-08-04' }),
+    ];
+    expect(visibleWorkLogs(unnumbered, null, '2026-08-04').map((l) => l.id)).toEqual([40, 20, 10]);
+  });
+
+  it('does not modify the list it was given', () => {
+    const rows = [log({ id: 1, no: 1 }), log({ id: 2, no: 2 })];
+    const before = rows.map((l) => l.id);
+    visibleWorkLogs(rows, null, '2026-08-04');
+    expect(rows.map((l) => l.id)).toEqual(before);
   });
 });
