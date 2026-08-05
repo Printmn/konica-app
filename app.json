@@ -1,0 +1,87 @@
+{
+  "expo": {
+    "name": "Printmn Konica",
+    "slug": "printmn-konica",
+    "version": "2.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "scheme": "printmn",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "mn.printmn.konica",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Бараа, үйлчилгээний зураг авахад камер ашиглана.",
+        "NSPhotoLibraryUsageDescription": "Бараа, үйлчилгээний зураг сонгоход зургийн санг ашиглана.",
+        "NSPhotoLibraryAddUsageDescription": "Тайлан, баримтын зургийг хадгалахад ашиглана.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "mn.printmn.konica",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a56db"
+      },
+      "permissions": [
+        "CAMERA",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Бараа, үйлчилгээний зураг авахад камер ашиглана."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Бараа, үйлчилгээний зураг сонгоход зургийн санг ашиглана."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#1a56db"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0f172a",
+          "image": "./assets/splash.png",
+          "imageWidth": 180,
+          "resizeMode": "contain"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "rtdbUrl": "https://printmn-c0d28-default-rtdb.firebaseio.com/pmn",
+      "rtdbAuth": "",
+      "eas": {
+        "projectId": "5d2eaf27-472b-41f9-823b-78217b45cc42"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/5d2eaf27-472b-41f9-823b-78217b45cc42"
+    },
+    "owner": "tushigakatsuki"
+  }
+}

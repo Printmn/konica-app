@@ -1,0 +1,403 @@
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Image } from 'expo-image';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { IconButton, TextInput } from 'react-native-paper';
+
+import { useAuth } from '@/authentication/AuthContext';
+import { EmptyState, LoadingState } from '@/components/feedback/StateViews';
+import { Screen } from '@/components/layout/Screen';
+import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { useChat } from '@/features/chat/ChatContext';
+import { isOwnMessage } from '@/features/chat/chatRepository';
+import { useConfirmAction } from '@/hooks/useConfirmAction';
+import { useData } from '@/features/data/DataContext';
+import { useScreenBack } from '@/hooks/useScreenBack';
+import { useResponsive } from '@/hooks/useResponsive';
+import { useToast } from '@/hooks/useToast';
+import type { RootStackParamList } from '@/navigation/types';
+import { captureImage, pickImageFromLibrary } from '@/services/media/imageService';
+import { useAppTheme } from '@/theme/ThemeProvider';
+import type { ChatMessage } from '@/types';
+import { toDateString, todayString } from '@/utils/date';
+
+/**
+ * Internal group chat.
+ *
+ * One shared room for the whole shop — see `ChatContext` for the sync and
+ * offline model. There is no profile system on purpose: the shop signs in with
+ * three shared PINs, so a message is labelled with the role or worker name that
+ * sent it and grouped by device.
+ */
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+/** `2026-08-04` → `Өнөөдөр` / `Өчигдөр` / `2026-08-02`. */
+function dayLabel(at: number): string {
+  const date = toDateString(new Date(at));
+  if (date === todayString()) return 'Өнөөдөр';
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date === toDateString(yesterday)) return 'Өчигдөр';
+  return date;
+}
+
+export function ChatScreen(): React.JSX.Element {
+  const theme = useAppTheme();
+  const onBack = useScreenBack();
+  const navigation = useNavigation<Nav>();
+  const { displayName, can } = useAuth();
+  const { showError } = useToast();
+  const { gutter } = useResponsive();
+  const { isOffline } = useData();
+  const {
+    messages,
+    deviceId,
+    isLoading,
+    isRefreshing,
+    hasSyncError,
+    pendingCount,
+    refresh,
+    send,
+    sendImage,
+    remove,
+    setActive,
+  } = useChat();
+
+  // Tells the provider to poll fast and to stop raising notifications for a
+  // conversation the user is looking at.
+  useFocusEffect(
+    useCallback(() => {
+      setActive(true);
+      return () => setActive(false);
+    }, [setActive]),
+  );
+
+  const [draft, setDraft] = useState('');
+  const [attaching, setAttaching] = useState(false);
+  /**
+   * Two-tap delete.
+   *
+   * The bin now sits beside every message the user may remove, rather than
+   * appearing after a long press nobody discovered. That makes it one tap from
+   * a chat history, so the first tap only arms it — the icon fills in, the
+   * bubble takes a red border, and a second tap within two seconds deletes.
+   */
+  const { armedId, confirm } = useConfirmAction<string>();
+  const listRef = useRef<FlatList<ChatMessage>>(null);
+  /**
+   * Auto-scrolling on every content change would yank the view back down each
+   * time a poll lands, so it only happens when the reader is already at the
+   * bottom — or when they just sent something themselves.
+   */
+  const atBottom = useRef(true);
+
+  const scrollToEnd = useCallback(() => {
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
+  }, []);
+
+  const handleContentChange = useCallback(() => {
+    if (atBottom.current) scrollToEnd();
+  }, [scrollToEnd]);
+
+  const handleSend = useCallback(() => {
+    if (!draft.trim()) return;
+    send(draft, displayName);
+    setDraft('');
+    atBottom.current = true;
+    scrollToEnd();
+  }, [draft, displayName, send, scrollToEnd]);
+
+  const handleDelete = useCallback(
+    (message: ChatMessage) => confirm(message.id, () => remove(message)),
+    [confirm, remove],
+  );
+
+  const attach = useCallback(
+    async (fromCamera: boolean) => {
+      setAttaching(true);
+      const result = fromCamera ? await captureImage() : await pickImageFromLibrary();
+      setAttaching(false);
+      if (!result.ok) {
+        showError(result.error);
+        return;
+      }
+      if (result.value === null) return;
+      sendImage(result.value, displayName);
+      scrollToEnd();
+    },
+    [displayName, sendImage, showError, scrollToEnd],
+  );
+
+  const canModerate = can('manageEmployees');
+
+  const subtitle = useMemo(() => {
+    if (isOffline) return `${displayName} · офлайн`;
+    if (pendingCount > 0) return `${displayName} · ${pendingCount} илгээгдэж байна`;
+    if (hasSyncError) return `${displayName} · холбогдож чадсангүй`;
+    return `${displayName} · бүх төхөөрөмж`;
+  }, [displayName, isOffline, pendingCount, hasSyncError]);
+
+  return (
+    <Screen>
+      <ScreenHeader title="Дотоод чат" subtitle={subtitle} onBack={onBack} />
+
+      {hasSyncError && !isOffline ? (
+        <Pressable onPress={() => void refresh(true)} style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>
+            ⚠️ Серверт холбогдож чадсангүй. Мессеж энэ утсанд хадгалагдаж, дараа
+            илгээгдэнэ. Дахин оролдохын тулд дарна уу.
+          </Text>
+        </Pressable>
+      ) : null}
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        {isLoading ? (
+          <LoadingState />
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={[styles.list, { paddingHorizontal: gutter }]}
+            onContentSizeChange={handleContentChange}
+            onScroll={(event) => {
+              const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+              atBottom.current =
+                contentOffset.y + layoutMeasurement.height >= contentSize.height - 60;
+            }}
+            scrollEventThrottle={80}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={11}
+            removeClippedSubviews
+            refreshControl={
+              <RefreshControl refreshing={isRefreshing} onRefresh={() => void refresh(true)} />
+            }
+            ListEmptyComponent={
+              <EmptyState
+                icon="💬"
+                title="Мессеж алга"
+                hint="Доорх талбарт бичээд илгээнэ үү. Бүх төхөөрөмж дээр харагдана."
+              />
+            }
+            renderItem={({ item, index }) => {
+              const isMe = isOwnMessage(item, deviceId, displayName);
+              const previous = index > 0 ? messages[index - 1] : undefined;
+              const showDay =
+                previous === undefined ||
+                toDateString(new Date(previous.at)) !== toDateString(new Date(item.at));
+              // Consecutive messages from one device only need one name.
+              const showSender = !isMe && previous?.deviceId !== item.deviceId;
+              const canDelete = isMe || canModerate;
+              /** Armed by the first tap on the bin; the second tap deletes. */
+              const armed = armedId === item.id;
+
+              return (
+                <View>
+                  {showDay ? (
+                    <Text style={[styles.day, { color: theme.custom.mutedText }]}>
+                      {dayLabel(item.at)}
+                    </Text>
+                  ) : null}
+
+                  <View
+                    accessibilityLabel={`${item.sender}: ${item.text}`}
+                    style={[styles.bubbleRow, isMe ? styles.mine : styles.theirs]}
+                  >
+                    {/* Own messages sit on the right, so their bin goes on the
+                        left — on either side it ends up on the outer edge,
+                        away from the thumb resting over the text. */}
+                    {canDelete && isMe ? (
+                      <IconButton
+                        icon={armed ? 'trash-can' : 'trash-can-outline'}
+                        size={18}
+                        iconColor={armed ? '#dc2626' : theme.custom.mutedText}
+                        style={styles.trash}
+                        onPress={() => handleDelete(item)}
+                        accessibilityLabel={
+                          armed ? `${item.sender}-ийн мессежийг устгахыг батлах` : 'Устгах'
+                        }
+                      />
+                    ) : null}
+
+                    <View
+                      style={[
+                        styles.bubble,
+                        {
+                          backgroundColor: isMe
+                            ? theme.colors.primary
+                            : theme.custom.cardBackground,
+                          borderColor: armed ? '#dc2626' : theme.custom.subtleBorder,
+                          borderWidth: armed ? 1.5 : StyleSheet.hairlineWidth,
+                          opacity: item.pending ? 0.75 : 1,
+                        },
+                      ]}
+                    >
+                      {showSender ? (
+                        <Text style={[styles.sender, { color: theme.colors.primary }]}>
+                          {item.sender}
+                        </Text>
+                      ) : null}
+
+                      {item.image ? (
+                        <Pressable
+                          onPress={() =>
+                            item.image
+                              ? navigation.navigate('ImageViewer', { uri: item.image })
+                              : undefined
+                          }
+                        >
+                          <Image
+                            source={{ uri: item.image }}
+                            style={styles.image}
+                            contentFit="cover"
+                            cachePolicy="memory-disk"
+                          />
+                        </Pressable>
+                      ) : null}
+
+                      {item.text ? (
+                        <Text
+                          style={[
+                            styles.text,
+                            { color: isMe ? '#ffffff' : theme.colors.onSurface },
+                          ]}
+                        >
+                          {item.text}
+                        </Text>
+                      ) : null}
+
+                      <Text
+                        style={[
+                          styles.time,
+                          {
+                            color: isMe ? 'rgba(255,255,255,0.7)' : theme.custom.mutedText,
+                          },
+                        ]}
+                      >
+                        {armed
+                          ? 'Устгах уу? Дахин дарна уу'
+                          : `${item.time}${item.pending ? ' ⏳' : ''}${
+                              item.legacy ? ' · зөвхөн энэ төхөөрөмжид' : ''
+                            }`}
+                      </Text>
+                    </View>
+
+                    {canDelete && !isMe ? (
+                      <IconButton
+                        icon={armed ? 'trash-can' : 'trash-can-outline'}
+                        size={18}
+                        iconColor={armed ? '#dc2626' : theme.custom.mutedText}
+                        style={styles.trash}
+                        onPress={() => handleDelete(item)}
+                        accessibilityLabel={
+                          armed ? `${item.sender}-ийн мессежийг устгахыг батлах` : 'Устгах'
+                        }
+                      />
+                    ) : null}
+                  </View>
+                </View>
+              );
+            }}
+          />
+        )}
+
+        <View
+          style={[
+            styles.composer,
+            {
+              backgroundColor: theme.custom.cardBackground,
+              borderTopColor: theme.custom.subtleBorder,
+            },
+          ]}
+        >
+          <IconButton
+            icon="image"
+            disabled={attaching}
+            onPress={() => void attach(false)}
+            accessibilityLabel="Зураг илгээх"
+          />
+          <IconButton
+            icon="camera"
+            disabled={attaching}
+            onPress={() => void attach(true)}
+            accessibilityLabel="Зураг авах"
+          />
+          <TextInput
+            mode="outlined"
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Мессеж бичих..."
+            style={styles.input}
+            dense
+            multiline
+            onSubmitEditing={handleSend}
+          />
+          <IconButton
+            icon="send"
+            mode="contained"
+            disabled={!draft.trim()}
+            onPress={handleSend}
+            accessibilityLabel="Илгээх"
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  errorBanner: { backgroundColor: '#fef3c7', paddingHorizontal: 16, paddingVertical: 8 },
+  errorBannerText: { color: '#92400e', fontSize: 11, lineHeight: 16, fontWeight: '600' },
+  list: { paddingVertical: 12, gap: 8, flexGrow: 1 },
+  day: {
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
+    paddingVertical: 6,
+    letterSpacing: 0.4,
+  },
+  bubbleRow: { flexDirection: 'row', alignItems: 'center' },
+  mine: { justifyContent: 'flex-end' },
+  theirs: { justifyContent: 'flex-start' },
+  trash: { margin: 0 },
+  bubble: {
+    maxWidth: '78%',
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 4,
+  },
+  sender: { fontSize: 10, fontWeight: '800' },
+  text: { fontSize: 14, lineHeight: 19 },
+  time: { fontSize: 9, alignSelf: 'flex-end' },
+  image: { width: 200, height: 150, borderRadius: 10 },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 2,
+  },
+  input: { flex: 1, maxHeight: 110 },
+});
