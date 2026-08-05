@@ -22,6 +22,7 @@ export type Capability =
   | 'viewChat'
   | 'editCatalog'
   | 'editWorkLogs'
+  | 'deleteWorkLogs'
   | 'manageEmployees'
   | 'manageHabits'
   | 'exportData'
@@ -43,6 +44,11 @@ const MATRIX: Readonly<Record<Capability, readonly Role[]>> = {
   // Workers browse the price lists read-only; they cannot mutate the catalog.
   editCatalog: ['manager', 'ipad'],
   editWorkLogs: ['manager', 'ipad'],
+
+  // Booking and correcting a job is counter work; removing one from the record
+  // is not. A deleted order takes its money out of the day's takings with it,
+  // and nothing in the app can bring it back.
+  deleteWorkLogs: ['manager'],
   manageEmployees: ['manager'],
   manageHabits: ['manager', 'ipad'],
   exportData: ['manager', 'ipad'],

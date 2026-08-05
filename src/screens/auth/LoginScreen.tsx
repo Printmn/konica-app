@@ -30,6 +30,21 @@ import type { Role } from '@/types';
 
 type Step = 'choose' | Role;
 
+/**
+ * Whether the Staff option appears on the login screen.
+ *
+ * The shop runs on two devices, so the third door is not needed at the moment.
+ * Everything behind it is left intact rather than deleted: the role, its
+ * permissions, the employee PINs and the attendance identity they carry. A
+ * device already signed in as staff keeps working, and turning this back on is
+ * the whole change.
+ *
+ * It matters because that role is what ties an attendance record to the person
+ * who authenticated. Recording attendance from the iPad instead means picking
+ * a name from a list, which nobody has to prove.
+ */
+const SHOW_WORKER_LOGIN = false;
+
 export function LoginScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
@@ -153,7 +168,7 @@ export function LoginScreen(): React.JSX.Element {
             </Pressable>
 
             <Pressable
-              onPress={() => setStep('worker')}
+              onPress={() => setStep('manager')}
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.option,
@@ -162,17 +177,34 @@ export function LoginScreen(): React.JSX.Element {
               ]}
             >
               <View style={styles.optionIconDark}>
-                <Icon source="account-box" size={22} color="#94a3b8" />
+                <Icon source="shield-account" size={22} color="#94a3b8" />
               </View>
               <View style={styles.optionText}>
-                <Text style={styles.optionTitleDim}>Staff</Text>
+                <Text style={styles.optionTitleDim}>Менежер</Text>
                 <Text style={styles.optionHint}>PIN код шаардана</Text>
               </View>
             </Pressable>
 
-            <Text style={styles.managerHint}>
-              Менежерээр нэвтрэхийн тулд лого дээр удаан дарна уу
-            </Text>
+            {SHOW_WORKER_LOGIN ? (
+              <Pressable
+                onPress={() => setStep('worker')}
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.option,
+                  styles.optionSecondary,
+                  pressed && styles.optionPressed,
+                ]}
+              >
+                <View style={styles.optionIconDark}>
+                  <Icon source="account-box" size={22} color="#94a3b8" />
+                </View>
+                <View style={styles.optionText}>
+                  <Text style={styles.optionTitleDim}>Staff</Text>
+                  <Text style={styles.optionHint}>PIN код шаардана</Text>
+                </View>
+              </Pressable>
+            ) : null}
+
           </View>
         ) : (
           <View style={styles.pinArea}>
@@ -245,13 +277,6 @@ const styles = StyleSheet.create({
   optionTitleDim: { color: '#e2e8f0', fontWeight: '800', fontSize: 16 },
   optionHintLight: { color: '#93c5fd', fontSize: 12 },
   optionHint: { color: '#64748b', fontSize: 12 },
-  managerHint: {
-    color: '#475569',
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 16,
-  },
   pinArea: { width: '100%', alignItems: 'center', gap: 16 },
   error: { color: '#ef4444', fontSize: 13 },
   back: { color: '#64748b', fontSize: 13, paddingVertical: 8 },

@@ -111,6 +111,7 @@ export function OrdersScreen(): React.JSX.Element {
   const dayTotal = useMemo(() => rawTotal(logs), [logs]);
 
   const canEdit = can('editWorkLogs');
+  const canDelete = can('deleteWorkLogs');
 
   // ── Actions ────────────────────────────────────────────────────────
 
@@ -385,6 +386,7 @@ export function OrdersScreen(): React.JSX.Element {
                 total={logs.length}
                 today={today}
                 canEdit={canEdit}
+                canDelete={canDelete}
                 onStatusChange={handleStatusChange}
                 onEditNote={(log) => setNoteDraft({ id: log.id, note: log.note ?? '' })}
                 onEdit={handleEdit}

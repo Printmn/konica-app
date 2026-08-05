@@ -120,6 +120,9 @@ export function ReportScreen(): React.JSX.Element {
   }
 
   const canExport = can('exportData');
+  // Same rule as the work board: correcting a job is counter work, removing
+  // one from the day's takings is not.
+  const canDelete = can('deleteWorkLogs');
   const exportDisabled = busy || report.logs.length === 0;
   const tileBasis: `${number}%` = isTablet ? '22%' : '46%';
 
@@ -261,12 +264,14 @@ export function ReportScreen(): React.JSX.Element {
                 </Text>
                 {item.hasVat ? <Text style={styles.vat}>НӨАТ</Text> : null}
               </View>
-              <Text
-                style={armedId === item.id ? styles.deleteArmed : styles.deleteIcon}
-                onPress={() => deleteLog(item.id)}
-              >
-                {armedId === item.id ? 'Устгах?' : '🗑'}
-              </Text>
+              {canDelete ? (
+                <Text
+                  style={armedId === item.id ? styles.deleteArmed : styles.deleteIcon}
+                  onPress={() => deleteLog(item.id)}
+                >
+                  {armedId === item.id ? 'Устгах?' : '🗑'}
+                </Text>
+              ) : null}
             </View>
           </Card>
         )}

@@ -27,7 +27,7 @@ const STATUS_BUTTONS: { status: WorkStatus; label: string; color: string; fg: st
 
 const DOC_BUTTONS: { docType: DocType; label: string; tint: string }[] = [
   { docType: 'quotation', label: '📋 Үнийн санал', tint: '#2563eb' },
-  { docType: 'invoice', label: '🧾 Нэхэмжлэх', tint: '#7c3aed' },
+  { docType: 'invoice', label: '🧾 Нэхэмжлэх', tint: '#2563eb' },
   { docType: 'receipt', label: '💵 Зарлагын баримт', tint: '#64748b' },
 ];
 
@@ -37,6 +37,8 @@ interface WorkLogCardProps {
   total: number;
   today: string;
   canEdit: boolean;
+  /** Removing a job from the record is a manager's decision, not the counter's. */
+  canDelete: boolean;
   onStatusChange: (id: number, status: WorkStatus) => void;
   onEditNote: (log: WorkLog) => void;
   /** Reopens the whole job in the booking form. */
@@ -52,6 +54,7 @@ function WorkLogCardBase({
   total,
   today,
   canEdit,
+  canDelete,
   onStatusChange,
   onEditNote,
   onEdit,
@@ -97,17 +100,19 @@ function WorkLogCardBase({
             >
               <Text style={styles.editIcon}>✏️</Text>
             </Pressable>
-            <Pressable
-              onPress={() => onDelete(log.id)}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Устгах"
-              style={isDeleteArmed ? styles.deleteArmed : undefined}
-            >
-              <Text style={isDeleteArmed ? styles.deleteArmedText : styles.deleteIcon}>
-                {isDeleteArmed ? 'Устгах?' : '🗑'}
-              </Text>
-            </Pressable>
+            {canDelete ? (
+              <Pressable
+                onPress={() => onDelete(log.id)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Устгах"
+                style={isDeleteArmed ? styles.deleteArmed : undefined}
+              >
+                <Text style={isDeleteArmed ? styles.deleteArmedText : styles.deleteIcon}>
+                  {isDeleteArmed ? 'Устгах?' : '🗑'}
+                </Text>
+              </Pressable>
+            ) : null}
           </>
         ) : null}
       </View>
@@ -279,12 +284,12 @@ const styles = StyleSheet.create({
   callChipText: { fontSize: 10, fontWeight: '700', color: '#ffffff' },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   vatChip: {
-    backgroundColor: '#ede9fe',
+    backgroundColor: '#dbeafe',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
-  vatChipText: { fontSize: 9, fontWeight: '700', color: '#6d28d9' },
+  vatChipText: { fontSize: 9, fontWeight: '700', color: '#1d4ed8' },
   payChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   payChipText: { fontSize: 10, fontWeight: '700' },
 
@@ -309,5 +314,6 @@ export const WorkLogCard = memo(
     prev.index === next.index &&
     prev.total === next.total &&
     prev.canEdit === next.canEdit &&
+    prev.canDelete === next.canDelete &&
     prev.isDeleteArmed === next.isDeleteArmed,
 );
