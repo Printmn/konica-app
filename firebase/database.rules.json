@@ -141,6 +141,18 @@
         }
       },
 
+      "invoices": {
+        ".indexOn": ["at", "deviceId"],
+        "$invoiceNumber": {
+          ".validate": "!newData.exists() || (newData.hasChildren(['number', 'deviceId', 'at']) && newData.child('number').isString() && newData.child('deviceId').isString() && newData.child('at').isNumber())",
+          "number": { ".validate": "newData.isString() && newData.val().length <= 40" },
+          "deviceId": { ".validate": "newData.isString() && newData.val().length <= 64" },
+          "at": { ".validate": "newData.isNumber()" },
+          "customer": { ".validate": "newData.isString() && newData.val().length <= 200" },
+          "$other": { ".validate": false }
+        }
+      },
+
       "$unknown": { ".validate": false }
     }
   }

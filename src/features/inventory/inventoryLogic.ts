@@ -31,6 +31,44 @@ export const isLowStock = (item: InventoryItem): boolean => {
 };
 
 /** Items that need reordering, scarcest first. */
+/**
+ * Which shelves the list is showing.
+ *
+ * `low` deliberately excludes what has already run out: "running low" is a
+ * reorder list — things still selling that will stop soon — while "out" is a
+ * list of what the shop cannot sell today. Lumping them together buries the
+ * urgent rows among the ones there is still time for.
+ */
+export type StockFilter = 'all' | 'low' | 'out';
+
+export const matchesStockFilter = (item: InventoryItem, filter: StockFilter): boolean => {
+  if (filter === 'out') return isOutOfStock(item);
+  if (filter === 'low') return isLowStock(item);
+  return true;
+};
+
+export const filterByStock = (
+  inventory: readonly InventoryItem[],
+  filter: StockFilter,
+): InventoryItem[] => inventory.filter((item) => matchesStockFilter(item, filter));
+
+export interface StockCounts {
+  all: number;
+  low: number;
+  out: number;
+}
+
+/** The three tallies shown on the filter chips. */
+export const stockCounts = (inventory: readonly InventoryItem[]): StockCounts => {
+  let low = 0;
+  let out = 0;
+  for (const item of inventory) {
+    if (isOutOfStock(item)) out += 1;
+    else if (isLowStock(item)) low += 1;
+  }
+  return { all: inventory.length, low, out };
+};
+
 export const lowStockItems = (inventory: readonly InventoryItem[]): InventoryItem[] =>
   inventory
     .filter((item) => stockCount(item) <= LOW_STOCK_THRESHOLD)

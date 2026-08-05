@@ -1,5 +1,13 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { Button, Icon, Modal, Portal } from 'react-native-paper';
 
 import { useAppTheme } from '@/theme/ThemeProvider';
@@ -9,10 +17,13 @@ import { nowTimeString } from '@/utils/date';
  * Time entry without a keyboard.
  *
  * Typing `14:30` on a phone keypad means switching layouts to find the colon,
- * and every screen that asked for a time was a plain text box — so a mistyped
- * `1430` silently became an invalid arrival or deadline. This replaces that
- * with a tap target: quick presets first (which is what people pick almost
- * every time), then hour and minute columns for anything else.
+ * so every time in this app is chosen rather than typed. Two wheels — hours on
+ * the left, minutes on the right — and whatever sits between the two guide
+ * lines is the selection.
+ *
+ * The wheels snap. A free-scrolling list leaves a number half off the line and
+ * makes you guess which one is chosen; snapping means the wheel always comes to
+ * rest on a value, and the value is the one under the lines.
  *
  * The value stays a `HH:mm` string so nothing downstream — `timeToMinutes`,
  * the Excel exporters, the stored records — has to change.
@@ -23,7 +34,7 @@ interface TimeFieldProps {
   label?: string;
   value: string;
   onChange: (next: string) => void;
-  /** Offered as one-tap chips above the columns. */
+  /** Offered as one-tap chips above the wheels. */
   presets?: readonly string[];
   placeholder?: string;
 }
@@ -32,22 +43,104 @@ const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 /** Five-minute granularity: the shop has never needed to record 14:37. */
 const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
 
-const ROW_HEIGHT = 44;
+const ROW_HEIGHT = 48;
+/** Rows visible at once. Odd, so one of them is the middle. */
+const VISIBLE_ROWS = 5;
+const WHEEL_HEIGHT = ROW_HEIGHT * VISIBLE_ROWS;
+/** Blank space above and below, so the first and last values can reach centre. */
+const PADDING = ROW_HEIGHT * Math.floor(VISIBLE_ROWS / 2);
 
 const split = (value: string): { hour: string; minute: string } => {
-  const [h = '', m = ''] = value.split(':');
-  const hour = HOURS.includes(h.padStart(2, '0')) ? h.padStart(2, '0') : '';
-  const minute = /^\d{1,2}$/.test(m) ? m.padStart(2, '0') : '';
-  return { hour, minute };
+  const match = /^(\d{1,2}):(\d{1,2})$/.exec(value.trim());
+  if (!match) return { hour: '', minute: '' };
+  return {
+    hour: (match[1] ?? '').padStart(2, '0'),
+    minute: (match[2] ?? '').padStart(2, '0'),
+  };
 };
 
-/** Rounds an arbitrary minute onto the nearest five, so 14:37 shows as 14:35. */
+/** Snaps an arbitrary minute onto the nearest five, so 14:37 opens on 14:35. */
 const nearestStep = (minute: string): string => {
   const n = Number(minute);
-  if (!Number.isFinite(n)) return '';
-  const rounded = Math.min(55, Math.round(n / 5) * 5);
-  return String(rounded).padStart(2, '0');
+  if (!Number.isFinite(n)) return '00';
+  return String(Math.min(55, Math.round(n / 5) * 5)).padStart(2, '0');
 };
+
+interface WheelProps {
+  items: readonly string[];
+  selected: string;
+  onSelect: (next: string) => void;
+  label: string;
+}
+
+/** One snapping column. */
+function Wheel({ items, selected, onSelect, label }: WheelProps): React.JSX.Element {
+  const theme = useAppTheme();
+  const ref = useRef<ScrollView>(null);
+  const index = Math.max(0, items.indexOf(selected));
+
+  // Follows the value when it changes from outside — a preset chip, or the
+  // sheet opening — without fighting a scroll the finger is still driving.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      ref.current?.scrollTo({ y: index * ROW_HEIGHT, animated: false });
+    }, 30);
+    return () => clearTimeout(timer);
+  }, [index]);
+
+  const settle = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const next = items[Math.round(event.nativeEvent.contentOffset.y / ROW_HEIGHT)];
+      if (next !== undefined && next !== selected) onSelect(next);
+    },
+    [items, selected, onSelect],
+  );
+
+  return (
+    <View style={styles.wheelWrap}>
+      <Text style={[styles.wheelLabel, { color: theme.custom.mutedText }]}>{label}</Text>
+      <ScrollView
+        ref={ref}
+        style={styles.wheel}
+        contentContainerStyle={styles.wheelContent}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={ROW_HEIGHT}
+        decelerationRate="fast"
+        onMomentumScrollEnd={settle}
+        // A slow drag that stops without momentum never fires the handler
+        // above, which would leave the wheel showing one value and holding
+        // another.
+        onScrollEndDrag={settle}
+      >
+        {items.map((item) => {
+          const active = item === selected;
+          return (
+            <Pressable
+              key={item}
+              onPress={() => onSelect(item)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={styles.row}
+            >
+              <Text
+                style={[
+                  styles.rowText,
+                  {
+                    color: active ? theme.colors.primary : theme.colors.onSurfaceVariant,
+                    opacity: active ? 1 : 0.45,
+                  },
+                  active && styles.rowTextActive,
+                ]}
+              >
+                {item}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
 
 function TimeFieldBase({
   label = '',
@@ -60,32 +153,15 @@ function TimeFieldBase({
   const [open, setOpen] = useState(false);
   const [hour, setHour] = useState('');
   const [minute, setMinute] = useState('');
-  const hourList = useRef<ScrollView>(null);
-  const minuteList = useRef<ScrollView>(null);
 
-  const current = useMemo(() => split(value), [value]);
-
-  // Opening the sheet starts from whatever is already in the field, and scrolls
-  // both columns so the selection is visible rather than buried.
+  // Opening starts from whatever is already in the field, falling back to the
+  // current time so the first thing under the lines is always plausible.
   useEffect(() => {
     if (!open) return;
-    const startHour = current.hour || nowTimeString().slice(0, 2);
-    const startMinute = nearestStep(current.minute || nowTimeString().slice(3, 5));
-    setHour(startHour);
-    setMinute(startMinute);
-
-    const timer = setTimeout(() => {
-      hourList.current?.scrollTo({
-        y: Math.max(0, (HOURS.indexOf(startHour) - 2) * ROW_HEIGHT),
-        animated: false,
-      });
-      minuteList.current?.scrollTo({
-        y: Math.max(0, (MINUTES.indexOf(startMinute) - 2) * ROW_HEIGHT),
-        animated: false,
-      });
-    }, 40);
-    return () => clearTimeout(timer);
-  }, [open, current.hour, current.minute]);
+    const current = split(value);
+    setHour(current.hour || nowTimeString().slice(0, 2));
+    setMinute(nearestStep(current.minute || nowTimeString().slice(3, 5)));
+  }, [open, value]);
 
   const commit = useCallback(
     (next: string) => {
@@ -93,52 +169,6 @@ function TimeFieldBase({
       setOpen(false);
     },
     [onChange],
-  );
-
-  const confirm = useCallback(() => {
-    if (hour === '' || minute === '') return;
-    commit(`${hour}:${minute}`);
-  }, [hour, minute, commit]);
-
-  const column = (
-    items: readonly string[],
-    selected: string,
-    onSelect: (next: string) => void,
-    ref: React.RefObject<ScrollView | null>,
-  ): React.JSX.Element => (
-    <ScrollView
-      ref={ref}
-      style={styles.column}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.columnContent}
-    >
-      {items.map((item) => {
-        const active = item === selected;
-        return (
-          <Pressable
-            key={item}
-            onPress={() => onSelect(item)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            style={[
-              styles.cell,
-              {
-                backgroundColor: active ? theme.colors.primary : 'transparent',
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.cellText,
-                { color: active ? '#ffffff' : theme.colors.onSurface },
-              ]}
-            >
-              {item}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
   );
 
   const hasValue = value.trim().length > 0;
@@ -183,9 +213,14 @@ function TimeFieldBase({
             { backgroundColor: theme.custom.cardBackground },
           ]}
         >
-          <Text style={[styles.sheetTitle, { color: theme.colors.onSurface }]}>
-            {label || 'Цаг сонгох'}
-          </Text>
+          <View style={styles.sheetHead}>
+            <Text style={[styles.sheetTitle, { color: theme.colors.onSurface }]}>
+              {label || 'Цаг сонгох'}
+            </Text>
+            <Text style={[styles.preview, { color: theme.colors.primary }]}>
+              {hour || '--'}:{minute || '--'}
+            </Text>
+          </View>
 
           <View style={styles.quickRow}>
             <Pressable
@@ -217,19 +252,21 @@ function TimeFieldBase({
             ))}
           </View>
 
-          <Text style={[styles.preview, { color: theme.colors.primary }]}>
-            {hour || '--'}:{minute || '--'}
-          </Text>
+          <View style={styles.wheels}>
+            {/* The band the selection sits in. Behind the wheels and not
+                touchable, so it cannot swallow a scroll. */}
+            <View pointerEvents="none" style={styles.selectionBand}>
+              <View
+                style={[
+                  styles.selectionInner,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              />
+            </View>
 
-          <View style={styles.columns}>
-            <View style={styles.columnWrap}>
-              <Text style={[styles.columnLabel, { color: theme.custom.mutedText }]}>Цаг</Text>
-              {column(HOURS, hour, setHour, hourList)}
-            </View>
-            <View style={styles.columnWrap}>
-              <Text style={[styles.columnLabel, { color: theme.custom.mutedText }]}>Минут</Text>
-              {column(MINUTES, minute, setMinute, minuteList)}
-            </View>
+            <Wheel items={HOURS} selected={hour} onSelect={setHour} label="Цаг" />
+            <Text style={[styles.colon, { color: theme.colors.onSurface }]}>:</Text>
+            <Wheel items={MINUTES} selected={minute} onSelect={setMinute} label="Минут" />
           </View>
 
           <View style={styles.actions}>
@@ -238,7 +275,7 @@ function TimeFieldBase({
             </Button>
             <Button
               mode="contained"
-              onPress={confirm}
+              onPress={() => commit(`${hour}:${minute}`)}
               disabled={hour === '' || minute === ''}
               style={styles.flex}
             >
@@ -265,32 +302,48 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   value: { flex: 1, fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
 
-  sheet: { margin: 20, borderRadius: 20, padding: 16, gap: 10 },
+  sheet: { margin: 18, borderRadius: 20, padding: 16, gap: 10 },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetTitle: { fontSize: 14, fontWeight: '800' },
+  preview: { fontSize: 28, fontWeight: '900', letterSpacing: 1 },
+
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   chipText: { fontSize: 13, fontWeight: '700' },
   chipTextActive: { fontSize: 13, fontWeight: '800', color: '#ffffff' },
-  preview: { fontSize: 30, fontWeight: '900', textAlign: 'center', letterSpacing: 1 },
-  columns: { flexDirection: 'row', gap: 12 },
-  columnWrap: { flex: 1 },
-  columnLabel: {
+
+  wheels: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  selectionBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: PADDING + 18,
+    height: ROW_HEIGHT,
+    justifyContent: 'center',
+  },
+  selectionInner: { height: ROW_HEIGHT, borderRadius: 12 },
+  colon: { fontSize: 26, fontWeight: '900', paddingBottom: WHEEL_HEIGHT / 2 - 16 },
+
+  wheelWrap: { width: 96 },
+  wheelLabel: {
     fontSize: 10,
     fontWeight: '800',
     textAlign: 'center',
     marginBottom: 4,
     letterSpacing: 0.5,
   },
-  column: { height: ROW_HEIGHT * 4 },
-  columnContent: { paddingVertical: 2 },
-  cell: {
-    height: ROW_HEIGHT,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cellText: { fontSize: 18, fontWeight: '800' },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 2 },
+  wheel: { height: WHEEL_HEIGHT },
+  wheelContent: { paddingVertical: PADDING },
+  row: { height: ROW_HEIGHT, alignItems: 'center', justifyContent: 'center' },
+  rowText: { fontSize: 22, fontWeight: '700' },
+  rowTextActive: { fontSize: 26, fontWeight: '900' },
+
+  actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
   flex: { flex: 1 },
 });
 

@@ -45,24 +45,85 @@ export const emptyQuotationItem = (id: number): QuotationItem => ({
   unitPrice: '',
 });
 
-export const emptyQuotationForm = (): QuotationForm => ({
-  customer: '',
-  phone: '',
+/**
+ * A blank document.
+ *
+ * The three types are not variations on one form in practice: a quotation is a
+ * price someone is being offered, an invoice is a demand for payment that has
+ * to carry a stamp, a signature and the amount in words to be accepted. So the
+ * defaults differ by type rather than making the clerk switch four toggles on
+ * every invoice.
+ *
+ * A quotation still prints exactly what it printed before these fields
+ * existed — every extra starts neutral there.
+ */
+export const emptyQuotationForm = (docType: DocType = 'quotation'): QuotationForm => {
+  // A receipt is the invoice's counterpart and is stamped and signed the same
+  // way; only a quotation goes out plain.
+  const isInvoice = docType === 'invoice' || docType === 'receipt';
+  return {
+    customer: '',
+    phone: '',
+    date: todayString(),
+    readyTime: '2-3 хоног',
+    vatIncluded: true,
+    showTotal: true,
+    items: [emptyQuotationItem(1)],
+    docNumber: '',
+    dueDate: '',
+    discountPercent: 0,
+    paymentKind: 'full',
+    advancePercent: 50,
+    advancePaid: 0,
+    showSignature: isInvoice,
+    showStamp: isInvoice,
+    showAmountInWords: isInvoice,
+  };
+};
+
+/** One independent draft per document type. */
+export type DocumentDrafts = Record<DocType, QuotationForm>;
+
+/**
+ * Three separate drafts, so switching tabs does not carry a quotation's
+ * customer, items and terms onto an invoice — they are different documents
+ * for different moments, and the shop often has both open for one job.
+ */
+export const emptyDocumentDrafts = (): DocumentDrafts => ({
+  quotation: emptyQuotationForm('quotation'),
+  invoice: emptyQuotationForm('invoice'),
+  receipt: emptyQuotationForm('receipt'),
+});
+
+/**
+ * Whether nothing has been entered on this document yet.
+ *
+ * Used to decide when it is safe to copy another draft over this one. A blank
+ * customer is not enough on its own — a clerk may have typed the items first —
+ * so every field a person could have filled in is checked.
+ */
+export const isBlankDocument = (form: QuotationForm): boolean =>
+  form.customer.trim() === '' &&
+  form.phone.trim() === '' &&
+  form.items.every((item) => item.name.trim() === '' && item.unitPrice.trim() === '');
+
+/**
+ * A receipt for an invoice.
+ *
+ * The two are filed together and describe the same sale, so the receipt starts
+ * as a copy: same customer, same lines, same amounts, and the *same number* —
+ * that shared number is what ties the pair together in the ledger.
+ *
+ * It is a copy rather than a live link. Once made, the receipt is edited on its
+ * own: the shop sometimes hands over part of an order, and the paper that goes
+ * with the goods has to say what actually went out.
+ */
+export const copyForReceipt = (invoice: QuotationForm): QuotationForm => ({
+  ...invoice,
+  // Fresh identity for the line rows so editing one document cannot reach into
+  // the other through a shared object.
+  items: invoice.items.map((item) => ({ ...item })),
   date: todayString(),
-  readyTime: '2-3 хоног',
-  vatIncluded: true,
-  showTotal: true,
-  items: [emptyQuotationItem(1)],
-  // The invoice extras all start neutral, so a document left untouched prints
-  // exactly what it printed before these fields existed.
-  docNumber: '',
-  dueDate: '',
-  discountPercent: 0,
-  paymentKind: 'full',
-  advancePercent: 50,
-  advancePaid: 0,
-  showSignature: false,
-  showAmountInWords: false,
 });
 
 export const addItem = (form: QuotationForm): QuotationForm => ({

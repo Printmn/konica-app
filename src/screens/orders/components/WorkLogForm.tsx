@@ -1,7 +1,9 @@
+import { Image } from 'expo-image';
 import React, { memo, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Modal, Portal, TextInput } from 'react-native-paper';
 
+import { ImageLightbox } from '@/components/ui/ImageLightbox';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { TimeField } from '@/components/ui/TimeField';
 import {
@@ -10,6 +12,8 @@ import {
   applyUnitPrice,
   buildProductList,
   filterProducts,
+  imageForJob,
+  productImageMap,
 } from '@/features/worklogs/workLogLogic';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useAppTheme } from '@/theme/ThemeProvider';
@@ -114,6 +118,7 @@ function WorkLogFormBase({
   const theme = useAppTheme();
   const [pickerVisible, setPickerVisible] = useState(false);
   const [areaVisible, setAreaVisible] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
 
@@ -121,6 +126,14 @@ function WorkLogFormBase({
     () => buildProductList(services, inventory),
     [services, inventory],
   );
+
+  // A work log names its product rather than pointing at it, so the photo is
+  // looked up by name — which also means a job typed by hand still finds one.
+  const productImages = useMemo(
+    () => productImageMap(services, inventory),
+    [services, inventory],
+  );
+  const jobImage = imageForJob(productImages, form.job);
   const filtered = useMemo(
     () => filterProducts(products, debouncedSearch).slice(0, 60),
     [products, debouncedSearch],
@@ -240,6 +253,26 @@ function WorkLogFormBase({
           style={styles.spaced}
           dense
         />
+
+        {/* Confirmation that the right product was picked. It sits at the foot
+            of this step, centred, because it answers the question this step
+            asks — not a decoration on the row above. */}
+        {jobImage ? (
+          <Pressable
+            onPress={() => setZoomed(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`${form.job} зураг томруулах`}
+            style={styles.jobImageWrap}
+          >
+            <Image
+              source={{ uri: jobImage }}
+              style={styles.jobImage}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              transition={120}
+            />
+          </Pressable>
+        ) : null}
       </View>
 
       {/* 3 & 4 ─ how many, at what price */}
@@ -518,6 +551,13 @@ function WorkLogFormBase({
         </Button>
       </View>
 
+      <ImageLightbox
+        uri={zoomed ? jobImage : null}
+        title={form.job}
+        subtitle={form.unitPrice ? formatCurrency(Number(form.unitPrice) || 0) : ''}
+        onDismiss={() => setZoomed(false)}
+      />
+
       <SquareMeterModal
         visible={areaVisible}
         onDismiss={() => setAreaVisible(false)}
@@ -656,19 +696,27 @@ const styles = StyleSheet.create({
 
   actions: { flexDirection: 'row', gap: 8, marginTop: 2 },
 
-  modal: { margin: 16, borderRadius: 20, padding: 16, maxHeight: '80%', gap: 10 },
+  jobImageWrap: { alignSelf: 'center', marginTop: 10 },
+  jobImage: { width: 120, height: 120, borderRadius: 14 },
+
+  modal: { marginHorizontal: 8, marginVertical: 24, borderRadius: 20, padding: 16, gap: 10 },
   modalTitle: { fontSize: 15, fontWeight: '800' },
-  modalList: { maxHeight: 400 },
+  /**
+   * A floor as well as a ceiling. Without the floor the sheet shrank to fit
+   * its contents, so narrowing the search down to one product collapsed the
+   * whole panel to a sliver and the next keystroke had nowhere to land.
+   */
+  modalList: { minHeight: 300, maxHeight: 440 },
   productRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 10,
+    paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  productName: { fontSize: 13, fontWeight: '700' },
-  productCat: { fontSize: 10 },
-  productPrice: { fontSize: 13, fontWeight: '900' },
+  productName: { fontSize: 14, fontWeight: '700' },
+  productCat: { fontSize: 11 },
+  productPrice: { fontSize: 14, fontWeight: '900' },
   empty: { textAlign: 'center', paddingVertical: 24, fontSize: 12 },
 });
 

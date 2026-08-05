@@ -231,6 +231,8 @@ export interface QuotationForm {
   advancePaid: number;
   /** Print the signature lines at the foot of the document. */
   showSignature: boolean;
+  /** Overlay the company stamp and signature images on those lines. */
+  showStamp: boolean;
   /** Print the amount written out in words. */
   showAmountInWords: boolean;
 }
@@ -307,7 +309,9 @@ export type RemoteKey =
   | 'inventory'
   | 'services'
   | 'tasks'
-  | 'chat';
+  | 'chat'
+  /** Issued invoice numbers, one node per number — a shared claim registry. */
+  | 'invoices';
 
 export type AsyncState = 'idle' | 'loading' | 'success' | 'error';
 

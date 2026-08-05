@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PickableProduct, WorkLog, WorkLogForm } from '@/types';
+import type {
+  InventoryItem,
+  PickableProduct,
+  ServiceItem,
+  WorkLog,
+  WorkLogForm,
+} from '@/types';
 
 import {
   applyProduct,
@@ -9,6 +15,10 @@ import {
   applyWorkLogEdit,
   createWorkLog,
   emptyWorkLogForm,
+  imageForJob,
+  productImageMap,
+  quantityLabel,
+  unitPriceOf,
   visibleWorkLogs,
   workLogToForm,
 } from './workLogLogic';
@@ -158,6 +168,114 @@ describe('editing a booked job', () => {
       orderDate: '2026-08-04',
     });
     expect(moved.date).toBe('2026-08-03');
+  });
+});
+
+/**
+ * A work log stores its job as free text, so the only route back to the
+ * product's photo is the name. Matching has to survive the difference between
+ * a name picked from the catalog and one typed at the counter.
+ */
+describe('catalog photos on the board', () => {
+  const service = (over: Partial<ServiceItem>): ServiceItem => ({
+    id: 1,
+    name: 'Нэрийн хуудас',
+    price: '8500₮',
+    category: 'Хэвлэл',
+    image: 'data:image/jpeg;base64,SERVICE',
+    ...over,
+  });
+
+  const stock = (over: Partial<InventoryItem>): InventoryItem => ({
+    id: 1,
+    name: 'Цаас',
+    price: '500₮',
+    stock: '10',
+    category: 'Цаас',
+    image: 'data:image/jpeg;base64,STOCK',
+    ...over,
+  });
+
+  it('finds a photo for a job booked from the catalog', () => {
+    const images = productImageMap([service({})], []);
+    expect(imageForJob(images, 'Нэрийн хуудас')).toBe('data:image/jpeg;base64,SERVICE');
+  });
+
+  it('still matches a name typed with different case or stray spaces', () => {
+    const images = productImageMap([service({})], []);
+    expect(imageForJob(images, '  нэрийн ХУУДАС ')).toBe('data:image/jpeg;base64,SERVICE');
+  });
+
+  it('has nothing for a job that is not in the catalog', () => {
+    expect(imageForJob(productImageMap([service({})], []), 'Тусгай захиалга')).toBeNull();
+  });
+
+  it('skips products with no photo rather than storing a blank', () => {
+    const images = productImageMap([service({ image: null })], []);
+    expect(imageForJob(images, 'Нэрийн хуудас')).toBeNull();
+  });
+
+  it('prefers a service over a stock item of the same name', () => {
+    // A job on the board is something the shop made, not something on a shelf.
+    const images = productImageMap([service({ name: 'Хавтас' })], [stock({ name: 'Хавтас' })]);
+    expect(imageForJob(images, 'Хавтас')).toBe('data:image/jpeg;base64,SERVICE');
+  });
+
+  it('falls back to inventory when no service carries the name', () => {
+    const images = productImageMap([], [stock({})]);
+    expect(imageForJob(images, 'Цаас')).toBe('data:image/jpeg;base64,STOCK');
+  });
+});
+
+/**
+ * `price` on a work log is the line total. Handing it to an invoice as the
+ * unit price multiplied the job by its quantity a second time — ten name cards
+ * at ₮1,300 were billed as ten at ₮13,000.
+ */
+describe('unitPriceOf', () => {
+  it('uses the stored unit price', () => {
+    expect(unitPriceOf({ price: '13000', unitPrice: '1300', quantity: 10 })).toBe(1300);
+  });
+
+  it('divides the total back out when no unit price was stored', () => {
+    // Rows booked before the field existed carry only a total.
+    expect(unitPriceOf({ price: '13000', unitPrice: '', quantity: 10 })).toBe(1300);
+  });
+
+  it('is the total itself for a single item', () => {
+    expect(unitPriceOf({ price: '8500', unitPrice: '', quantity: 1 })).toBe(8500);
+    expect(unitPriceOf({ price: '8500', unitPrice: '', quantity: '' })).toBe(8500);
+  });
+
+  it('rounds a total that does not divide evenly', () => {
+    expect(unitPriceOf({ price: '1000', unitPrice: '', quantity: 3 })).toBe(333);
+  });
+
+  it('ignores a zero or unreadable stored unit price', () => {
+    expect(unitPriceOf({ price: '13000', unitPrice: '0', quantity: 10 })).toBe(1300);
+    expect(unitPriceOf({ price: '13000', unitPrice: 'үнэгүй', quantity: 10 })).toBe(1300);
+  });
+
+  it('is zero for a job with no price at all', () => {
+    expect(unitPriceOf({ price: '', unitPrice: '', quantity: 5 })).toBe(0);
+  });
+});
+
+describe('quantityLabel', () => {
+  it('shows a count worth reading', () => {
+    expect(quantityLabel({ quantity: 90 })).toBe('×90');
+    expect(quantityLabel({ quantity: '250' })).toBe('×250');
+  });
+
+  it('says nothing for a single item, which is the default on every job', () => {
+    expect(quantityLabel({ quantity: 1 })).toBe('');
+    expect(quantityLabel({ quantity: '1' })).toBe('');
+  });
+
+  it('says nothing when the quantity is missing or unreadable', () => {
+    expect(quantityLabel({ quantity: '' })).toBe('');
+    expect(quantityLabel({ quantity: 'олон' })).toBe('');
+    expect(quantityLabel({ quantity: 0 })).toBe('');
   });
 });
 

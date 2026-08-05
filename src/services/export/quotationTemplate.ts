@@ -3,6 +3,9 @@ import type { DocType, QuotationForm } from '@/types';
 import { percentText, tugrugInWords } from '@/utils/mongolian';
 import { formatNumber, parsePrice } from '@/utils/price';
 
+import { SIGNATURE_DATA_URI, STAMP_DATA_URI } from './documentAssets';
+import { buildInvoiceHtml } from './invoiceTemplate';
+
 /**
  * Print template for quotations, invoices and receipts.
  *
@@ -32,6 +35,10 @@ const docTypeHeading = (docType: DocType): string => {
 };
 
 export function buildQuotationHtml(form: QuotationForm, docType: DocType): string {
+  // The invoice and its receipt are accounting documents and follow the shop's
+  // paper form; a quotation keeps this sales layout.
+  if (docType === 'invoice' || docType === 'receipt') return buildInvoiceHtml(form, docType);
+
   const rows = form.items
     .map((item, index) => {
       const unitPrice = parsePrice(item.unitPrice);
@@ -92,6 +99,24 @@ export function buildQuotationHtml(form: QuotationForm, docType: DocType): strin
          </div>`
       : '';
 
+  /**
+   * The stamp and signature sit *over* the "Захиалга авсан" line rather than
+   * beside it, which is how the paper form is actually signed. They are
+   * absolutely positioned so adding them cannot push the rest of the document
+   * onto a second page.
+   */
+  const stampOverlay =
+    form.showStamp && form.showSignature
+      ? [
+          STAMP_DATA_URI
+            ? `<img class="stamp" src="${STAMP_DATA_URI}" alt="" />`
+            : '',
+          SIGNATURE_DATA_URI
+            ? `<img class="signature" src="${SIGNATURE_DATA_URI}" alt="" />`
+            : '',
+        ].join('')
+      : '';
+
   const signatureBlock = form.showSignature
     ? `<div class="sign">
          <div class="sign-row">
@@ -99,7 +124,8 @@ export function buildQuotationHtml(form: QuotationForm, docType: DocType): strin
              <p>Захиалга өгсөн: ………….…...…. ( ………............. )</p>
              <p class="sign-caption"><span>Гарын үсэг</span><span>Нэр</span></p>
            </div>
-           <div class="sign-col">
+           <div class="sign-col receiver">
+             ${stampOverlay}
              <p>Захиалга авсан: ……………...… ( ………………... )</p>
              <p class="sign-caption"><span>Гарын үсэг</span><span>Нэр</span></p>
            </div>
@@ -120,13 +146,6 @@ export function buildQuotationHtml(form: QuotationForm, docType: DocType): strin
     form.dueDate && form.dueDate !== form.date
       ? `<p>Төлөх: ${escapeHtml(form.dueDate)}</p>`
       : '';
-
-  const kindNote =
-    docType === 'invoice' && form.paymentKind === 'advance'
-      ? `<p class="contact">( Урьдчилгааны нэхэмжлэх — ${percentText(form.advancePercent)} )</p>`
-      : docType === 'invoice' && form.paymentKind === 'balance'
-        ? '<p class="contact">( Үлдэгдэл төлбөрийн нэхэмжлэх )</p>'
-        : '';
 
   const phoneBlock = form.phone
     ? `<div style="text-align:right">
@@ -186,6 +205,13 @@ export function buildQuotationHtml(form: QuotationForm, docType: DocType): strin
                   font-size: 8px; color: #6b7280; margin-top: 2px; }
   .sign-received { margin-top: 12px; text-align: center; }
   .sign-date { margin-top: 12px; text-align: center; }
+  .sign-col.receiver { position: relative; }
+  .sign-col.receiver .stamp {
+    position: absolute; left: 0; bottom: -14px; width: 96px; opacity: 0.85;
+  }
+  .sign-col.receiver .signature {
+    position: absolute; left: 62px; bottom: -6px; width: 104px;
+  }
 </style>
 </head>
 <body>
@@ -201,7 +227,6 @@ export function buildQuotationHtml(form: QuotationForm, docType: DocType): strin
         </div>
       </div>
       <p class="doc-type">${docTypeHeading(docType)}</p>
-      ${kindNote}
       <p class="contact">Утас 8022-2323</p>
     </div>
 

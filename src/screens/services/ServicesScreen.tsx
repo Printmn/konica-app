@@ -7,6 +7,7 @@ import { useAuth } from '@/authentication/AuthContext';
 import { EmptyState, OfflineBanner, SyncErrorBanner } from '@/components/feedback/StateViews';
 import { Screen } from '@/components/layout/Screen';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { ImageLightbox } from '@/components/ui/ImageLightbox';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { getServiceEmoji } from '@/constants/emoji';
 import { useData } from '@/features/data/DataContext';
@@ -53,6 +54,8 @@ export function ServicesScreen(): React.JSX.Element {
   const debouncedSearch = useDebouncedValue(search);
   const [draft, setDraft] = useState<DraftService | null>(null);
   const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
+  /** The photo currently open at full size, or `null`. */
+  const [zoomed, setZoomed] = useState<ServiceItem | null>(null);
   const { armedId, confirm } = useConfirmAction();
 
   const canEdit = can('editCatalog');
@@ -208,7 +211,11 @@ export function ServicesScreen(): React.JSX.Element {
                 },
               ]}
             >
-              <View
+              <Pressable
+                onPress={item.image ? () => setZoomed(item) : undefined}
+                disabled={!item.image}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.name} зураг харах`}
                 style={[styles.thumb, { backgroundColor: theme.colors.surfaceVariant }]}
               >
                 {item.image ? (
@@ -223,7 +230,7 @@ export function ServicesScreen(): React.JSX.Element {
                     {getServiceEmoji(item.name, item.category)}
                   </Text>
                 )}
-              </View>
+              </Pressable>
 
               <View style={styles.flex}>
                 <Text style={[styles.name, { color: theme.colors.onSurface }]} numberOfLines={2}>
@@ -400,6 +407,13 @@ export function ServicesScreen(): React.JSX.Element {
           </View>
         </Modal>
       </Portal>
+
+      <ImageLightbox
+        uri={zoomed?.image ?? null}
+        title={zoomed?.name ?? ''}
+        subtitle={zoomed?.price ?? ''}
+        onDismiss={() => setZoomed(null)}
+      />
     </Screen>
   );
 }

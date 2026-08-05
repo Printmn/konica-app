@@ -1,21 +1,24 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
-import { Button, FAB, Modal, Portal, TextInput } from 'react-native-paper';
+import { Button, FAB, Modal, Portal, SegmentedButtons, TextInput } from 'react-native-paper';
 
 import { useAuth } from '@/authentication/AuthContext';
 import { EmptyState, OfflineBanner, SyncErrorBanner } from '@/components/feedback/StateViews';
 import { Screen } from '@/components/layout/Screen';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { CatalogRow } from '@/components/ui/CatalogRow';
+import { ImageLightbox } from '@/components/ui/ImageLightbox';
 import { SearchBar } from '@/components/ui/SearchBar';
-import { StatTile } from '@/components/ui/StatTile';
 import { getCategoryEmoji } from '@/constants/emoji';
 import { useData } from '@/features/data/DataContext';
 import {
-  inventoryValue,
+  filterByStock,
   lowStockItems,
   searchInventory,
+  stockCounts,
+  type StockFilter,
 } from '@/features/inventory/inventoryLogic';
+import { addMissingSeedItems, missingSeedCount } from '@/features/inventory/stockSeed';
 import { useScreenBack } from '@/hooks/useScreenBack';
 import { useConfirmAction } from '@/hooks/useConfirmAction';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -25,7 +28,6 @@ import { captureImage, pickImageFromLibrary } from '@/services/media/imageServic
 import { notifyLowStock } from '@/services/notifications/notificationService';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { InventoryItem } from '@/types';
-import { formatCurrency } from '@/utils/price';
 import { nextId } from '@/utils/id';
 
 /**
@@ -66,17 +68,23 @@ export function InventoryScreen(): React.JSX.Element {
 
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
+  /** Whole shelf, what is running low, or what has run out. */
+  const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [draft, setDraft] = useState<DraftItem | null>(null);
+  /** The photo currently open at full size, or `null`. */
+  const [zoomed, setZoomed] = useState<InventoryItem | null>(null);
   const { armedId, confirm } = useConfirmAction();
 
   const canEdit = can('editCatalog');
 
+  // Searched first, then filtered: the counts on the chips describe the whole
+  // shelf, so they stay still while a search narrows the rows below them.
   const filtered = useMemo(
-    () => searchInventory(inventory, debouncedSearch),
-    [inventory, debouncedSearch],
+    () => filterByStock(searchInventory(inventory, debouncedSearch), stockFilter),
+    [inventory, debouncedSearch, stockFilter],
   );
+  const counts = useMemo(() => stockCounts(inventory), [inventory]);
   const lowStock = useMemo(() => lowStockItems(inventory), [inventory]);
-  const totalValue = useMemo(() => inventoryValue(inventory), [inventory]);
 
   const attachImage = useCallback(
     async (fromCamera: boolean) => {
@@ -117,6 +125,18 @@ export function InventoryScreen(): React.JSX.Element {
     show(draft.id === null ? 'Бараа нэмэгдлээ' : 'Хадгаллаа', 'success');
   }, [draft, setInventory, show]);
 
+  /**
+   * How many of the shop's standing rows are not on the list yet. Zero once
+   * they have all been added, which is what makes the button below disappear
+   * on its own rather than sitting there forever.
+   */
+  const missing = useMemo(() => missingSeedCount(inventory), [inventory]);
+
+  const addStandingStock = useCallback(() => {
+    setInventory((previous) => addMissingSeedItems(previous));
+    show(`${missing} бараа нэмэгдлээ`, 'success');
+  }, [setInventory, show, missing]);
+
   const deleteItem = useCallback(
     (id: number) => {
       confirm(id, (confirmedId) => {
@@ -154,16 +174,23 @@ export function InventoryScreen(): React.JSX.Element {
 
       <View style={[styles.header, { paddingHorizontal: gutter }]}>
         <SearchBar value={search} onChange={setSearch} placeholder="Барааны нэрээр хайх..." />
-        {can('viewReport') ? (
-          <View style={styles.stats}>
-            <StatTile label="Нийт үнэлгээ" value={formatCurrency(totalValue)} icon="📦" />
-            <StatTile
-              label="Дуусч буй"
-              value={String(lowStock.length)}
-              icon="⚠️"
-              tint="#f59e0b"
-            />
-          </View>
+
+        <SegmentedButtons
+          value={stockFilter}
+          onValueChange={(value) => setStockFilter(value)}
+          density="small"
+          buttons={[
+            { value: 'all', label: `Бүгд ${counts.all}` },
+            { value: 'low', label: `Дуусч буй ${counts.low}` },
+            { value: 'out', label: `Дууссан ${counts.out}` },
+          ]}
+        />
+        {/* Only while something is missing: once the standing list is in, this
+            has nothing left to do and takes itself away. */}
+        {canEdit && missing > 0 ? (
+          <Button mode="outlined" icon="playlist-plus" compact onPress={addStandingStock}>
+            Үндсэн {missing} барааг нэмэх
+          </Button>
         ) : null}
       </View>
 
@@ -180,8 +207,16 @@ export function InventoryScreen(): React.JSX.Element {
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <EmptyState
-            icon="📦"
-            title={search ? 'Илэрц олдсонгүй' : 'Бараа бүртгэгдээгүй байна'}
+            icon={stockFilter === 'out' ? '✅' : '📦'}
+            title={
+              stockFilter === 'out'
+                ? 'Дууссан бараа алга'
+                : stockFilter === 'low'
+                  ? 'Дуусч буй бараа алга'
+                  : search
+                    ? 'Илэрц олдсонгүй'
+                    : 'Бараа бүртгэгдээгүй байна'
+            }
           />
         }
         renderItem={({ item }) => (
@@ -204,6 +239,7 @@ export function InventoryScreen(): React.JSX.Element {
                   : undefined
               }
               onLongPress={canEdit ? () => deleteItem(item.id) : undefined}
+              onPressImage={() => setZoomed(item)}
             />
             {armedId === item.id ? (
               <Text style={styles.confirmHint}>Устгахын тулд дахин удаан дарна уу</Text>
@@ -304,6 +340,13 @@ export function InventoryScreen(): React.JSX.Element {
           </View>
         </Modal>
       </Portal>
+
+      <ImageLightbox
+        uri={zoomed?.image ?? null}
+        title={zoomed?.name ?? ''}
+        subtitle={zoomed?.price ?? ''}
+        onDismiss={() => setZoomed(null)}
+      />
     </Screen>
   );
 }

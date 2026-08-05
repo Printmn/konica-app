@@ -163,6 +163,69 @@ export const createWorkLog = (
 };
 
 /**
+ * Catalog photos, keyed by product name.
+ *
+ * A work log stores the job as free text, not as a reference to a catalog row,
+ * so the only way back to the product's photo is its name. Matching is
+ * case-insensitive and trimmed, because the name reaches the log through a
+ * picker on some paths and through the keyboard on others.
+ *
+ * Services win over inventory on a name collision: a job on the board is a
+ * thing the shop produced, not a thing on the shelf.
+ */
+export const productImageMap = (
+  services: readonly ServiceItem[],
+  inventory: readonly InventoryItem[],
+): Map<string, string> => {
+  const map = new Map<string, string>();
+  for (const item of inventory) {
+    if (item.image) map.set(item.name.trim().toLowerCase(), item.image);
+  }
+  for (const service of services) {
+    if (service.image) map.set(service.name.trim().toLowerCase(), service.image);
+  }
+  return map;
+};
+
+/**
+ * The count shown after a job name on the board, or `''` when there is nothing
+ * worth saying.
+ *
+ * A quantity of one is the default on every job, so printing it would put the
+ * same noise on every row and make the rows that matter — an order of 250 —
+ * harder to spot, not easier.
+ */
+export const quantityLabel = (log: Pick<WorkLog, 'quantity'>): string => {
+  const count = Number(log.quantity);
+  if (!Number.isFinite(count) || count <= 1) return '';
+  return `×${count}`;
+};
+
+/** The photo for one job, or `null` when the catalog has none. */
+export const imageForJob = (images: Map<string, string>, job: string): string | null =>
+  images.get(job.trim().toLowerCase()) ?? null;
+
+/**
+ * The unit price of a booked job.
+ *
+ * `price` on a work log is the *line total* — unit price times quantity — so
+ * handing it to a document as the unit price multiplied the job by its quantity
+ * a second time: 10 × ₮1,300 arrived on the invoice as 10 × ₮13,000.
+ *
+ * The stored `unitPrice` is the answer where there is one. Older rows and rows
+ * booked before that field existed carry only a total, so it is divided back
+ * out by the quantity rather than left to inflate the document.
+ */
+export const unitPriceOf = (log: Pick<WorkLog, 'price' | 'unitPrice' | 'quantity'>): number => {
+  const stored = Number(log.unitPrice);
+  if (Number.isFinite(stored) && stored > 0) return stored;
+
+  const total = Number(log.price) || 0;
+  const quantity = Number(log.quantity) || 1;
+  return quantity > 1 ? Math.round(total / quantity) : total;
+};
+
+/**
  * Loads an existing job back into the form for editing.
  *
  * `orderDate` is taken from the row's actual `date` rather than from the stored

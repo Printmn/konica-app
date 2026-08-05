@@ -2,7 +2,7 @@ import React, { memo, useCallback } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
-import { workLogRowColor } from '@/features/worklogs/workLogLogic';
+import { quantityLabel, workLogRowColor } from '@/features/worklogs/workLogLogic';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { DocType, WorkLog, WorkStatus } from '@/types';
 import { effectivePrice, formatCurrency } from '@/utils/price';
@@ -61,6 +61,7 @@ function WorkLogCardBase({
 }: WorkLogCardProps): React.JSX.Element {
   const theme = useAppTheme();
   const accent = workLogRowColor(log);
+  const count = quantityLabel(log);
 
   const callPhone = useCallback(() => {
     if (log.phone) void Linking.openURL(`tel:${log.phone}`);
@@ -75,6 +76,9 @@ function WorkLogCardBase({
         <View style={[styles.dot, { backgroundColor: accent }]} />
         <Text style={[styles.job, { color: theme.colors.onSurface }]} numberOfLines={2}>
           {log.job}
+          {count === '' ? null : (
+            <Text style={[styles.count, { color: theme.colors.primary }]}> {count}</Text>
+          )}
         </Text>
 
         {log.date && log.date !== today ? (
@@ -230,6 +234,7 @@ const styles = StyleSheet.create({
   index: { fontSize: 10, fontWeight: '900', width: 18 },
   dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)' },
   job: { flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 18 },
+  count: { fontSize: 13, fontWeight: '900' },
   carryOver: {
     backgroundColor: '#ffedd5',
     paddingHorizontal: 6,

@@ -36,7 +36,6 @@ const MANAGER_TABS: TabDefinition[] = [
   { name: 'Home', label: 'Нүүр', icon: 'home-variant' },
   { name: 'Daily', label: 'Цаг', icon: 'calendar-check' },
   { name: 'Orders', label: 'Захиалга', icon: 'clipboard-list' },
-  { name: 'Performance', label: 'Үзүүлэлт', icon: 'trending-up' },
   { name: 'Report', label: 'Тайлан', icon: 'format-list-bulleted' },
 ];
 

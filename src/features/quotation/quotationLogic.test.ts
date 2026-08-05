@@ -2,12 +2,131 @@ import { describe, expect, it } from 'vitest';
 
 import type { QuotationForm } from '@/types';
 
-import { emptyQuotationForm, quotationTotals } from './quotationLogic';
+import {
+  copyForReceipt,
+  emptyDocumentDrafts,
+  emptyQuotationForm,
+  isBlankDocument,
+  quotationTotals,
+} from './quotationLogic';
 
 const formWith = (over: Partial<QuotationForm>): QuotationForm => ({
   ...emptyQuotationForm(),
   items: [{ id: 1, name: 'Нэрийн хуудас', format: '', material: '', qty: 10, unitPrice: '10000' }],
   ...over,
+});
+
+/**
+ * An invoice is a demand for payment and has to carry a stamp, a signature and
+ * the amount in words to be accepted; a quotation is an offer and carries none
+ * of that. Making the clerk flip four switches on every invoice is how one of
+ * them eventually goes out unsigned.
+ */
+describe('defaults by document type', () => {
+  it('gives an invoice its stamp, signature and written amount', () => {
+    const invoice = emptyQuotationForm('invoice');
+    expect(invoice.showStamp).toBe(true);
+    expect(invoice.showSignature).toBe(true);
+    expect(invoice.showAmountInWords).toBe(true);
+  });
+
+  it('leaves a quotation exactly as it printed before these fields existed', () => {
+    const quotation = emptyQuotationForm();
+    expect(quotation.showStamp).toBe(false);
+    expect(quotation.showSignature).toBe(false);
+    expect(quotation.showAmountInWords).toBe(false);
+    expect(quotation.discountPercent).toBe(0);
+    expect(quotation.paymentKind).toBe('full');
+  });
+
+  it('stamps a receipt like an invoice — it is the invoice’s counterpart', () => {
+    expect(emptyQuotationForm('receipt').showStamp).toBe(true);
+    expect(emptyQuotationForm('receipt').showSignature).toBe(true);
+  });
+});
+
+describe('emptyDocumentDrafts', () => {
+  it('gives each document type its own draft', () => {
+    const drafts = emptyDocumentDrafts();
+    expect(drafts.quotation).not.toBe(drafts.invoice);
+    expect(drafts.invoice).not.toBe(drafts.receipt);
+  });
+
+  it('does not share the items array between drafts', () => {
+    // Sharing it would make a line typed on the quotation appear on the
+    // invoice, which is exactly the bug separate drafts exist to prevent.
+    const drafts = emptyDocumentDrafts();
+    expect(drafts.quotation.items).not.toBe(drafts.invoice.items);
+  });
+
+  it('carries the per-type defaults through', () => {
+    expect(emptyDocumentDrafts().invoice.showStamp).toBe(true);
+    expect(emptyDocumentDrafts().quotation.showStamp).toBe(false);
+  });
+});
+
+/**
+ * An invoice and its receipt describe one sale and are filed together under a
+ * single number. Retyping the customer and every line onto the second one is
+ * only a chance to get them different.
+ */
+describe('starting a receipt from its invoice', () => {
+  const invoice = {
+    ...emptyQuotationForm('invoice'),
+    customer: 'Тэст ХХК',
+    phone: '99000099',
+    docNumber: '2026-0007',
+    discountPercent: 5,
+    items: [
+      { id: 1, name: 'Нэрийн хуудас', format: '', material: '', qty: 500, unitPrice: '850' },
+    ],
+  };
+
+  it('carries the customer, the lines and the number across', () => {
+    const receipt = copyForReceipt(invoice);
+    expect(receipt.customer).toBe('Тэст ХХК');
+    expect(receipt.items[0]?.name).toBe('Нэрийн хуудас');
+    expect(receipt.discountPercent).toBe(5);
+    // The shared number is what ties the pair together in the ledger.
+    expect(receipt.docNumber).toBe('2026-0007');
+  });
+
+  it('does not share the line rows, so editing one cannot change the other', () => {
+    const receipt = copyForReceipt(invoice);
+    expect(receipt.items[0]).not.toBe(invoice.items[0]);
+    expect(receipt.items).not.toBe(invoice.items);
+  });
+
+  it('is dated the day the goods went out, not the day of the invoice', () => {
+    expect(copyForReceipt({ ...invoice, date: '2026-08-01' }).date).not.toBe('2026-08-01');
+  });
+});
+
+describe('isBlankDocument', () => {
+  it('is true for an untouched draft', () => {
+    expect(isBlankDocument(emptyQuotationForm('receipt'))).toBe(true);
+  });
+
+  it('is false once a customer has been named', () => {
+    expect(isBlankDocument({ ...emptyQuotationForm(), customer: 'А' })).toBe(false);
+  });
+
+  it('is false once a line has been entered, even with no customer', () => {
+    // Clerks often type the items first; treating that as blank would wipe it.
+    const withItem = {
+      ...emptyQuotationForm(),
+      items: [{ id: 1, name: 'Хавтас', format: '', material: '', qty: 1, unitPrice: '' }],
+    };
+    expect(isBlankDocument(withItem)).toBe(false);
+  });
+
+  it('is false once a price has been entered without a name', () => {
+    const priced = {
+      ...emptyQuotationForm(),
+      items: [{ id: 1, name: '', format: '', material: '', qty: 1, unitPrice: '5000' }],
+    };
+    expect(isBlankDocument(priced)).toBe(false);
+  });
 });
 
 /**

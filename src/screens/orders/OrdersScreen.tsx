@@ -19,6 +19,7 @@ import {
   archiveDates,
   createWorkLog,
   emptyWorkLogForm,
+  unitPriceOf,
   validateWorkLog,
   visibleWorkLogs,
   workLogToForm,
@@ -203,7 +204,8 @@ export function OrdersScreen(): React.JSX.Element {
             {
               name: log.job || '',
               qty: Number(log.quantity) || 1,
-              unitPrice: log.price || '',
+              // The unit price, not the line total — see `unitPriceOf`.
+              unitPrice: String(unitPriceOf(log)),
             },
           ],
         },

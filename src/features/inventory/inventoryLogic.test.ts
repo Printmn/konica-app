@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import type { InventoryItem } from '@/types';
 
 import {
+  filterByStock,
   inventoryValue,
   isLowStock,
   isOutOfStock,
   lowStockItems,
   stockCount,
+  stockCounts,
 } from './inventoryLogic';
 
 const item = (over: Partial<InventoryItem>): InventoryItem => ({
@@ -75,6 +77,49 @@ describe('stock warnings', () => {
 
   it('no longer warns about a range that reads as healthy', () => {
     expect(lowStockItems([item({ stock: '20-30' })])).toEqual([]);
+  });
+});
+
+/**
+ * "Running low" is a reorder list — things still selling that will stop soon.
+ * "Out" is what the shop cannot sell today. Keeping them apart is the whole
+ * point: merged, the urgent rows are buried among the ones there is still time
+ * for.
+ */
+describe('splitting the shelf by stock', () => {
+  const shelf = [
+    item({ id: 1, name: 'Дууссан', stock: '0' }),
+    item({ id: 2, name: 'Хэтэрсэн', stock: '-2' }),
+    item({ id: 3, name: 'Багассан', stock: '3' }),
+    item({ id: 4, name: 'Хүрэлцээтэй', stock: '80' }),
+  ];
+
+  it('counts each group without double-counting', () => {
+    const counts = stockCounts(shelf);
+    expect(counts).toEqual({ all: 4, low: 1, out: 2 });
+    expect(counts.low + counts.out).toBeLessThanOrEqual(counts.all);
+  });
+
+  it('shows everything under «Бүгд»', () => {
+    expect(filterByStock(shelf, 'all')).toHaveLength(4);
+  });
+
+  it('lists only what has run out under «Дууссан»', () => {
+    expect(filterByStock(shelf, 'out').map((row) => row.id)).toEqual([1, 2]);
+  });
+
+  it('leaves what has run out off the reorder list', () => {
+    // An empty shelf is not "running low" — it is a different problem.
+    expect(filterByStock(shelf, 'low').map((row) => row.id)).toEqual([3]);
+  });
+
+  it('is all zeroes for an empty shelf', () => {
+    expect(stockCounts([])).toEqual({ all: 0, low: 0, out: 0 });
+  });
+
+  it('treats an unreadable count as run out rather than hiding it', () => {
+    const unreadable = [item({ id: 5, stock: 'олон' })];
+    expect(filterByStock(unreadable, 'out')).toHaveLength(1);
   });
 });
 

@@ -21,6 +21,12 @@ interface CatalogRowProps {
   onLongPress?: (() => void) | undefined;
   /** Inventory rows show a stock badge; service rows do not. */
   showStock?: boolean;
+  /**
+   * Tapping the photo opens it large instead of opening the edit form. Only
+   * wired up where there is a photo to open — a row without one keeps the
+   * whole surface as a single tap target.
+   */
+  onPressImage?: (() => void) | undefined;
 }
 
 const hasStock = (item: InventoryItem | ServiceItem): item is InventoryItem =>
@@ -32,6 +38,7 @@ function CatalogRowBase({
   onPress,
   onLongPress,
   showStock = false,
+  onPressImage,
 }: CatalogRowProps): React.JSX.Element {
   const theme = useAppTheme();
   const stockItem = hasStock(item) ? item : null;
@@ -58,7 +65,12 @@ function CatalogRowBase({
         pressed && onPress ? styles.pressed : null,
       ]}
     >
-      <View style={[styles.thumb, { backgroundColor: theme.colors.surfaceVariant }]}>
+      <Pressable
+        onPress={item.image && onPressImage ? onPressImage : onPress}
+        accessibilityRole="button"
+        accessibilityLabel={item.image ? `${item.name} зураг харах` : item.name}
+        style={[styles.thumb, { backgroundColor: theme.colors.surfaceVariant }]}
+      >
         {item.image ? (
           <Image
             source={{ uri: item.image }}
@@ -70,7 +82,7 @@ function CatalogRowBase({
         ) : (
           <Text style={styles.emoji}>{emoji}</Text>
         )}
-      </View>
+      </Pressable>
 
       <View style={styles.body}>
         <Text
