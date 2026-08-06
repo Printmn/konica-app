@@ -101,15 +101,15 @@ const SHORTCUTS: Shortcut[] = [
     capability: 'viewQuotation',
     go: (nav) => nav.navigate('Quotation'),
   },
-  {
-    key: 'admin',
-    label: 'Админ',
-    hint: 'Ажилтан & дадал',
-    icon: 'cog',
-    tone: 'amber',
-    capability: 'viewAdmin',
-    go: (nav) => nav.navigate('Admin'),
-  },
+  // {
+  //   key: 'admin',
+  //   label: 'Админ',
+  //   hint: 'Ажилтан & дадал',
+  //   icon: 'cog',
+  //   tone: 'amber',
+  //   capability: 'viewAdmin',
+  //   go: (nav) => nav.navigate('Admin'),
+  // },
 ];
 
 export function HomeScreen(): React.JSX.Element {
@@ -177,9 +177,9 @@ export function HomeScreen(): React.JSX.Element {
         {can('viewReport') ? (
           <View style={styles.stats}>
             <StatTile
-              label="Өнөөдрийн орлого"
-              value={formatCurrency(report.totalRevenue)}
-              icon="💰"
+              label="Дуусах гэж буй бараа"
+              value={String(lowStock.length)}
+              icon="📦"
               emphasis
             />
             <StatTile
@@ -198,13 +198,14 @@ export function HomeScreen(): React.JSX.Element {
             accessibilityRole="button"
           >
             <Text style={styles.warningTitle}>
-              ⚠️ {lowStock.length} барааны үлдэгдэл дуусч байна
+              📦 Үлдэгдэл багатай бараа ({lowStock.length})
             </Text>
+
             <Text style={styles.warningBody} numberOfLines={1}>
               {lowStock
                 .slice(0, 3)
                 .map((item) => item.name)
-                .join(' · ')}
+                .join(" • ")}
             </Text>
           </Pressable>
         ) : null}

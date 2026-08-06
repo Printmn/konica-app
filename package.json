@@ -18,7 +18,7 @@
     "eas": "npx eas-cli@latest",
     "build:preview": "npx eas-cli@latest build --profile preview --platform all",
     "build:prod": "npx eas-cli@latest build --profile production --platform all",
-    "ota": "npx eas-cli@latest update --branch production --environment production",
+    "ota": "npx eas-cli@latest update --branch production",
     "build:android": "npx eas-cli@latest build --profile production --platform android",
     "build:ios": "npx eas-cli@latest build --profile production --platform ios"
   },
