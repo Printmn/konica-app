@@ -85,6 +85,10 @@ export function MainTabs(): React.JSX.Element {
       initialRouteName={initialRouteName}
       screenOptions={{
         headerShown: false,
+        // The bar has nothing to offer while someone is typing, and leaving it
+        // on stacks its height on top of the keyboard — which is what pushed
+        // the chat composer out of sight.
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: ACTIVE_GREEN,
         tabBarInactiveTintColor: theme.custom.mutedText,
         tabBarStyle: {

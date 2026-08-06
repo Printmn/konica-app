@@ -1,10 +1,10 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Image } from 'expo-image';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   RefreshControl,
@@ -12,6 +12,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton, TextInput } from 'react-native-paper';
 
 import { useAuth } from '@/authentication/AuthContext';
@@ -149,20 +150,47 @@ export function ChatScreen(): React.JSX.Element {
   }, [displayName, isOffline, pendingCount, hasSyncError]);
 
   /**
-   * How far the composer sits below the top of the screen — the header, plus
-   * the sync-error banner when it's showing.
+   * How far to lift the composer so the keyboard cannot cover it.
    *
-   * `90` was a number tuned to iPhone's header height. iPad's safe-area top
-   * inset is smaller, so the header itself renders shorter there, and a fixed
-   * offset overshot enough to leave the composer sitting under the keyboard.
-   * Measuring the real, rendered height keeps this correct on any screen size
-   * and whenever the banner shows or hides.
+   * `KeyboardAvoidingView` used to do this, and it stopped working. On Android
+   * it never did anything on its own — it relies on the window resizing when
+   * the keyboard opens, and SDK 54 draws edge to edge, so the window keeps its
+   * full height and the keyboard simply lies on top of the composer. On iOS the
+   * offset had to be guessed from the header height, which differs between a
+   * phone and an iPad.
+   *
+   * Measuring the keyboard itself sidesteps both. The bottom safe-area inset is
+   * taken off because `Screen` already reserves it, and the tab bar is set to
+   * hide while typing, so nothing else sits underneath.
    */
-  const [aboveKeyboardHeight, setAboveKeyboardHeight] = useState(0);
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const lift = Math.max(0, keyboardHeight - insets.bottom);
+
+  useEffect(() => {
+    // iOS reports the keyboard before it animates in, Android only after.
+    const shown = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event) => {
+        setKeyboardHeight(event.endCoordinates.height);
+        // The list shrinks as the composer rises; without this the newest
+        // message slides out of view exactly when you start replying to it.
+        if (atBottom.current) scrollToEnd();
+      },
+    );
+    const hidden = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0),
+    );
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, [scrollToEnd]);
 
   return (
     <Screen>
-      <View onLayout={(event) => setAboveKeyboardHeight(event.nativeEvent.layout.height)}>
+      <View>
         <ScreenHeader title="Дотоод чат" subtitle={subtitle} onBack={onBack} />
 
         {hasSyncError && !isOffline ? (
@@ -175,11 +203,7 @@ export function ChatScreen(): React.JSX.Element {
         ) : null}
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? aboveKeyboardHeight : 0}
-      >
+      <View style={[styles.flex, { paddingBottom: lift }]}>
         {isLoading ? (
           <LoadingState />
         ) : (
@@ -372,7 +396,7 @@ export function ChatScreen(): React.JSX.Element {
             accessibilityLabel="Илгээх"
           />
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Screen>
   );
 }
