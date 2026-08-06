@@ -15,6 +15,7 @@ export type MainTabParamList = {
   Home: undefined;
   Orders: { prefill?: WorkLogPrefill } | undefined;
   Daily: undefined;
+  QuickPrint: undefined;
   Inventory: undefined;
   Services: undefined;
   Report: undefined;

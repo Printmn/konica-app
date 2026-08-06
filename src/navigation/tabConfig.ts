@@ -27,14 +27,18 @@ const WORKER_TABS: TabDefinition[] = [
 
 const IPAD_TABS: TabDefinition[] = [
   { name: 'Home', label: 'Нүүр', icon: 'home-variant' },
-  { name: 'Daily', label: 'Цаг', icon: 'calendar-check' },
+  // «Цаг» таб — Түргэн хэвлэлээр сольсон тул түр коммент.
+  // { name: 'Daily', label: 'Цаг', icon: 'calendar-check' },
+  { name: 'QuickPrint', label: 'Түргэн хэвлэл', icon: 'flash' },
   { name: 'Orders', label: 'Захиалга', icon: 'clipboard-list' },
   { name: 'Chat', label: 'Чат', icon: 'message-text' },
 ];
 
 const MANAGER_TABS: TabDefinition[] = [
   { name: 'Home', label: 'Нүүр', icon: 'home-variant' },
-  { name: 'Daily', label: 'Цаг', icon: 'calendar-check' },
+  // «Цаг» таб — Түргэн хэвлэлээр сольсон тул түр коммент.
+  // { name: 'Daily', label: 'Цаг', icon: 'calendar-check' },
+  { name: 'QuickPrint', label: 'Түргэн хэвлэл', icon: 'flash' },
   { name: 'Orders', label: 'Захиалга', icon: 'clipboard-list' },
   { name: 'Report', label: 'Тайлан', icon: 'format-list-bulleted' },
 ];
@@ -62,6 +66,7 @@ export const TAB_CAPABILITY: Readonly<Record<keyof MainTabParamList, Capability>
   Home: 'viewHome',
   Orders: 'viewOrders',
   Daily: 'viewAttendance',
+  QuickPrint: 'viewOrders',
   Inventory: 'viewInventory',
   Services: 'viewServices',
   Report: 'viewReport',
@@ -114,6 +119,13 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
     icon: 'clipboard-list',
     roles: ['manager', 'ipad'],
     tab: 'Orders',
+  },
+  {
+    key: 'quickprint',
+    label: 'Түргэн хэвлэл',
+    icon: 'flash',
+    roles: ['manager', 'ipad'],
+    tab: 'QuickPrint',
   },
   {
     key: 'daily',

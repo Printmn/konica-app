@@ -2,7 +2,7 @@ import React, { memo, useCallback } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
-import { quantityLabel, workLogRowColor } from '@/features/worklogs/workLogLogic';
+import { deadlineLabel, quantityLabel, workLogRowColor } from '@/features/worklogs/workLogLogic';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { DocType, WorkLog, WorkStatus } from '@/types';
 import { effectivePrice, formatCurrency } from '@/utils/price';
@@ -65,6 +65,10 @@ function WorkLogCardBase({
   const theme = useAppTheme();
   const accent = workLogRowColor(log);
   const count = quantityLabel(log);
+  // Gated on the rendered label, not on `deadline` alone: a job can now carry
+  // a handover *day* with no time, and testing the time field hid that day
+  // completely — the export printed it while the board showed nothing.
+  const deadline = deadlineLabel(log);
 
   const callPhone = useCallback(() => {
     if (log.phone) void Linking.openURL(`tel:${log.phone}`);
@@ -154,9 +158,9 @@ function WorkLogCardBase({
       <View style={styles.meta}>
         {log.receivedTime ? <Text style={styles.metaItem}>⏰ {log.receivedTime}</Text> : null}
 
-        {log.deadline ? (
+        {deadline ? (
           <Text style={[styles.metaItem, log.isTomorrow && styles.metaTomorrow]}>
-            📅 {log.isTomorrow ? `Маргааш ${log.deadline}` : log.deadline}
+            📅 {deadline}
           </Text>
         ) : null}
 

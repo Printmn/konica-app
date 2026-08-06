@@ -26,6 +26,14 @@ import type {
 } from '@/types';
 import { formatCurrency } from '@/utils/price';
 import { VAT_RATE } from '@/constants/config';
+import {
+  DAY_LABELS_MN,
+  MONTH_NAMES_MN,
+  daysInMonth,
+  shiftDate,
+  todayString,
+  weekdayOf,
+} from '@/utils/date';
 
 import { SquareMeterModal } from './SquareMeterModal';
 
@@ -95,6 +103,26 @@ function deadlinesFromNow(from: Date = new Date()): string[] {
   });
 }
 
+/** One-tap day offsets shown above the calendar in the «Маргааш» picker. */
+const TOMORROW_PRESETS = [
+  { label: 'Маргааш', days: 1 },
+  { label: '+2 хоног', days: 2 },
+  { label: '+3 хоног', days: 3 },
+  { label: '+7 хоног', days: 7 },
+] as const;
+
+const stepMonth = (month: string, dir: number): string => {
+  const [y, m] = month.split('-').map(Number);
+  const date = new Date(y ?? 1970, (m ?? 1) - 1 + dir, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const monthTitle = (month: string): string => {
+  const [year, mo] = month.split('-');
+  const index = Number(mo) - 1;
+  return `${year ?? ''} · ${MONTH_NAMES_MN[index] ?? ''}`;
+};
+
 interface WorkLogFormProps {
   form: FormShape;
   onChange: (next: FormShape) => void;
@@ -121,6 +149,35 @@ function WorkLogFormBase({
   const [zoomed, setZoomed] = useState(false);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
+  const [tomorrowPickerVisible, setTomorrowPickerVisible] = useState(false);
+  const [tomorrowMonth, setTomorrowMonth] = useState(() => todayString().slice(0, 7));
+
+  /** Opens the picker on the month that already holds the chosen day. */
+  const openTomorrowPicker = (): void => {
+    setTomorrowMonth((form.tomorrowDate || shiftDate(todayString(), 1)).slice(0, 7));
+    setTomorrowPickerVisible(true);
+  };
+
+  const commitTomorrow = (date: string): void => {
+    onChange({ ...form, isTomorrow: true, tomorrowDate: date });
+    setTomorrowPickerVisible(false);
+  };
+
+  const clearTomorrow = (): void => {
+    onChange({ ...form, isTomorrow: false, tomorrowDate: '' });
+    setTomorrowPickerVisible(false);
+  };
+
+  const tomorrowCells = useMemo(() => {
+    const first = `${tomorrowMonth}-01`;
+    const blanks = weekdayOf(first);
+    const total = daysInMonth(tomorrowMonth);
+    const out: (string | null)[] = Array.from({ length: blanks }, () => null);
+    for (let day = 1; day <= total; day += 1) {
+      out.push(`${tomorrowMonth}-${String(day).padStart(2, '0')}`);
+    }
+    return out;
+  }, [tomorrowMonth]);
 
   const products = useMemo(
     () => buildProductList(services, inventory),
@@ -449,7 +506,7 @@ function WorkLogFormBase({
                 />
               </View>
               <Pressable
-                onPress={() => set('isTomorrow', !form.isTomorrow)}
+                onPress={openTomorrowPicker}
                 accessibilityRole="button"
                 accessibilityState={{ selected: form.isTomorrow }}
                 style={[
@@ -472,7 +529,9 @@ function WorkLogFormBase({
                     },
                   ]}
                 >
-                  Маргааш
+                  {form.isTomorrow && form.tomorrowDate
+                    ? form.tomorrowDate.slice(5).replace('-', '/')
+                    : 'Маргааш'}
                 </Text>
               </Pressable>
             </View>
@@ -611,6 +670,134 @@ function WorkLogFormBase({
           </ScrollView>
         </Modal>
       </Portal>
+
+      <Portal>
+        <Modal
+          visible={tomorrowPickerVisible}
+          onDismiss={() => setTomorrowPickerVisible(false)}
+          contentContainerStyle={[
+            styles.tomorrowModal,
+            { backgroundColor: theme.custom.cardBackground },
+          ]}
+        >
+          <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
+            Хэзээ өгөхийг сонгоно уу
+          </Text>
+
+          <View style={styles.quickRow}>
+            {TOMORROW_PRESETS.map((preset) => {
+              const target = shiftDate(todayString(), preset.days);
+              const active = form.tomorrowDate === target;
+              return (
+                <Pressable
+                  key={preset.label}
+                  onPress={() => commitTomorrow(target)}
+                  accessibilityRole="button"
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.colors.primary : theme.colors.surfaceVariant,
+                      borderColor: active ? theme.colors.primary : theme.custom.subtleBorder,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: active ? theme.colors.onPrimary : theme.colors.onSurface },
+                    ]}
+                  >
+                    {preset.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.monthRow}>
+            <Pressable
+              onPress={() => setTomorrowMonth((prev) => stepMonth(prev, -1))}
+              accessibilityRole="button"
+              accessibilityLabel="Өмнөх сар"
+              hitSlop={10}
+              style={styles.monthNav}
+            >
+              <Text style={[styles.monthNavText, { color: theme.colors.primary }]}>‹</Text>
+            </Pressable>
+            <Text style={[styles.tomorrowMonthTitle, { color: theme.colors.onSurface }]}>
+              {monthTitle(tomorrowMonth)}
+            </Text>
+            <Pressable
+              onPress={() => setTomorrowMonth((prev) => stepMonth(prev, 1))}
+              accessibilityRole="button"
+              accessibilityLabel="Дараах сар"
+              hitSlop={10}
+              style={styles.monthNav}
+            >
+              <Text style={[styles.monthNavText, { color: theme.colors.primary }]}>›</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.weekRow}>
+            {DAY_LABELS_MN.map((day) => (
+              <Text key={day} style={[styles.weekLabel, { color: theme.custom.mutedText }]}>
+                {day}
+              </Text>
+            ))}
+          </View>
+
+          <View style={styles.calGrid}>
+            {tomorrowCells.map((cell, index) => {
+              if (cell === null) return <View key={`blank-${index}`} style={styles.calCell} />;
+              const selected = cell === form.tomorrowDate;
+              const isToday = cell === todayString();
+              // A handover cannot be in the past; those days can only ever be a
+              // mis-tap, and one saved silently would sit on the board looking
+              // overdue from the moment it was booked.
+              const past = cell < todayString();
+              return (
+                <Pressable
+                  key={cell}
+                  onPress={() => commitTomorrow(cell)}
+                  disabled={past}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected, disabled: past }}
+                  style={[
+                    styles.calCell,
+                    selected && { backgroundColor: theme.colors.primary },
+                    !selected && isToday && { borderWidth: 1, borderColor: theme.colors.primary },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.calCellText,
+                      {
+                        color: selected
+                          ? theme.colors.onPrimary
+                          : isToday
+                            ? theme.colors.primary
+                            : theme.colors.onSurface,
+                        opacity: past ? 0.28 : 1,
+                      },
+                    ]}
+                  >
+                    {Number(cell.slice(8))}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.tomorrowActions}>
+            <Button mode="outlined" onPress={clearTomorrow} style={styles.flex}>
+              Цуцлах
+            </Button>
+            <Button mode="text" onPress={() => setTomorrowPickerVisible(false)} style={styles.flex}>
+              Болих
+            </Button>
+          </View>
+        </Modal>
+      </Portal>
     </View>
   );
 }
@@ -707,6 +894,27 @@ const styles = StyleSheet.create({
    * whole panel to a sliver and the next keystroke had nowhere to land.
    */
   modalList: { minHeight: 300, maxHeight: 440 },
+
+  tomorrowModal: { marginHorizontal: 8, marginVertical: 24, borderRadius: 20, padding: 16, gap: 10 },
+  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1 },
+  chipText: { fontSize: 13, fontWeight: '700' },
+  monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  monthNav: { paddingHorizontal: 14, paddingVertical: 4 },
+  monthNavText: { fontSize: 22, fontWeight: '800' },
+  tomorrowMonthTitle: { fontSize: 15, fontWeight: '800' },
+  weekRow: { flexDirection: 'row' },
+  weekLabel: { width: `${100 / 7}%`, textAlign: 'center', fontSize: 10, fontWeight: '800' },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calCell: {
+    width: `${100 / 7}%`,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  calCellText: { fontSize: 15, fontWeight: '700' },
+  tomorrowActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
   productRow: {
     flexDirection: 'row',
     alignItems: 'center',

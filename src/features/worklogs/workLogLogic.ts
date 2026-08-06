@@ -34,6 +34,7 @@ export const emptyWorkLogForm = (): WorkLogForm => ({
   payType: '',
   isDelivery: false,
   isTomorrow: false,
+  tomorrowDate: '',
   customer: '',
   customerType: '',
   paymentStatus: 'Төлөгдөөгүй',
@@ -219,6 +220,25 @@ export const quantityLabel = (log: Pick<WorkLog, 'quantity'>): string => {
   const count = Number(log.quantity);
   if (!Number.isFinite(count) || count <= 1) return '';
   return `×${count}`;
+};
+
+/**
+ * The handover deadline, as a person reads it.
+ *
+ * «Маргааш» started as a plain flag and is now a chosen day, so a job may be
+ * due next Tuesday rather than tomorrow. The word "Маргааш" is only correct
+ * when no day was picked — printing it beside a date a week out would tell the
+ * shop the wrong thing, and the Excel export is what the shop reconciles from.
+ */
+export const deadlineLabel = (
+  log: Pick<WorkLog, 'deadline' | 'isTomorrow' | 'tomorrowDate'>,
+): string => {
+  const time = log.deadline || '';
+  if (!log.isTomorrow) return time;
+
+  const day = log.tomorrowDate ?? '';
+  const shown = /^\d{4}-\d{2}-\d{2}$/.test(day) ? day.slice(5).replace('-', '/') : 'Маргааш';
+  return time ? `${shown} ${time}` : shown;
 };
 
 /** The photo for one job, or `null` when the catalog has none. */

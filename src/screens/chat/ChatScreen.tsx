@@ -148,23 +148,37 @@ export function ChatScreen(): React.JSX.Element {
     return `${displayName} · бүх төхөөрөмж`;
   }, [displayName, isOffline, pendingCount, hasSyncError]);
 
+  /**
+   * How far the composer sits below the top of the screen — the header, plus
+   * the sync-error banner when it's showing.
+   *
+   * `90` was a number tuned to iPhone's header height. iPad's safe-area top
+   * inset is smaller, so the header itself renders shorter there, and a fixed
+   * offset overshot enough to leave the composer sitting under the keyboard.
+   * Measuring the real, rendered height keeps this correct on any screen size
+   * and whenever the banner shows or hides.
+   */
+  const [aboveKeyboardHeight, setAboveKeyboardHeight] = useState(0);
+
   return (
     <Screen>
-      <ScreenHeader title="Дотоод чат" subtitle={subtitle} onBack={onBack} />
+      <View onLayout={(event) => setAboveKeyboardHeight(event.nativeEvent.layout.height)}>
+        <ScreenHeader title="Дотоод чат" subtitle={subtitle} onBack={onBack} />
 
-      {hasSyncError && !isOffline ? (
-        <Pressable onPress={() => void refresh(true)} style={styles.errorBanner}>
-          <Text style={styles.errorBannerText}>
-            ⚠️ Серверт холбогдож чадсангүй. Мессеж энэ утсанд хадгалагдаж, дараа
-            илгээгдэнэ. Дахин оролдохын тулд дарна уу.
-          </Text>
-        </Pressable>
-      ) : null}
+        {hasSyncError && !isOffline ? (
+          <Pressable onPress={() => void refresh(true)} style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>
+              ⚠️ Серверт холбогдож чадсангүй. Мессеж энэ утсанд хадгалагдаж, дараа
+              илгээгдэнэ. Дахин оролдохын тулд дарна уу.
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? aboveKeyboardHeight : 0}
       >
         {isLoading ? (
           <LoadingState />

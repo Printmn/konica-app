@@ -23,6 +23,13 @@ import { formatCurrency, parsePrice } from '@/utils/price';
 
 const PAY_TYPES: PayType[] = ['Данс', 'Бэлэн', 'Карт'];
 
+/**
+ * These three cover most of the counter's daily volume, so they always lead
+ * the chip row — regardless of how many rows each currently has — with
+ * whatever else is in the catalog trailing behind, busiest first.
+ */
+const PRIORITY_CATEGORIES = ['Канон', 'Цээж зураг', 'Хэвлэл'];
+
 export interface QuickOrderDraft {
   description: string;
   unitPrice: number;
@@ -40,6 +47,8 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
 
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
+  /** `null` = «Бүгд» — every category shown. */
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<ServiceItem | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
@@ -51,16 +60,39 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
   const [customDesc, setCustomDesc] = useState('');
   const [customPrice, setCustomPrice] = useState('');
 
+  /**
+   * Category chips — «Канон», «Цээж зураг», «Хэвлэл» гэх мэт.
+   *
+   * Хатуу жагсаалт биш, `services`-ээс өөрөө гардаг: хамгийн олон мөртэй
+   * ангилал эхэнд гарч ирнэ, тул дэлгүүр нэмж/устгаж ангилсан ч чип-ийн
+   * жагсаалт дагаад шинэчлэгдэнэ.
+   */
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const service of services) {
+      const category = service.category || 'Бусад';
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+    const front = PRIORITY_CATEGORIES.filter((name) => counts.has(name));
+    const rest = Array.from(counts.entries())
+      .filter(([name]) => !PRIORITY_CATEGORIES.includes(name))
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
+    return [...front, ...rest];
+  }, [services]);
+
   /** Matches the price list: one flat, numbered list, searchable by category. */
   const visible = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
-    if (!needle) return [...services];
-    return services.filter(
-      (service) =>
+    return services.filter((service) => {
+      if (categoryFilter && (service.category || 'Бусад') !== categoryFilter) return false;
+      if (!needle) return true;
+      return (
         service.name.toLowerCase().includes(needle) ||
-        (service.category || '').toLowerCase().includes(needle),
-    );
-  }, [services, debouncedSearch]);
+        (service.category || '').toLowerCase().includes(needle)
+      );
+    });
+  }, [services, debouncedSearch, categoryFilter]);
 
   const isNegotiated = (service: ServiceItem): boolean =>
     (CUSTOM_PRICE_CATEGORIES as readonly string[]).includes(service.category);
@@ -135,6 +167,74 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
               placeholder="Үйлчилгээ, ангиллаар хайх..."
             />
 
+            {categories.length > 1 ? (
+              <FlatList
+                data={categories}
+                keyExtractor={(item) => item}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoryRow}
+                ItemSeparatorComponent={() => <View style={styles.categorySeparator} />}
+                ListHeaderComponent={
+                  <Pressable
+                    onPress={() => setCategoryFilter(null)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: categoryFilter === null }}
+                    style={[
+                      styles.categoryChip,
+                      {
+                        backgroundColor:
+                          categoryFilter === null
+                            ? theme.colors.primary
+                            : theme.custom.cardBackground,
+                        borderColor:
+                          categoryFilter === null ? theme.colors.primary : theme.custom.subtleBorder,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        {
+                          color:
+                            categoryFilter === null ? theme.colors.onPrimary : theme.colors.onSurface,
+                        },
+                      ]}
+                    >
+                      Бүгд
+                    </Text>
+                  </Pressable>
+                }
+                renderItem={({ item }) => {
+                  const active = categoryFilter === item;
+                  return (
+                    <Pressable
+                      onPress={() => setCategoryFilter(active ? null : item)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      style={[
+                        styles.categoryChip,
+                        {
+                          backgroundColor: active ? theme.colors.primary : theme.custom.cardBackground,
+                          borderColor: active ? theme.colors.primary : theme.custom.subtleBorder,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryChipText,
+                          { color: active ? theme.colors.onPrimary : theme.colors.onSurface },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {item}
+                      </Text>
+                    </Pressable>
+                  );
+                }}
+              />
+            ) : null}
+
             <Pressable
               onPress={() => {
                 setCustomFor('');
@@ -160,7 +260,7 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
             </Pressable>
 
             <Text style={[styles.count, { color: theme.custom.mutedText }]}>
-              {debouncedSearch
+              {debouncedSearch || categoryFilter
                 ? `ОЛДСОН ${visible.length} ҮЙЛЧИЛГЭЭ`
                 : `НИЙТ ${visible.length} ҮЙЛЧИЛГЭЭ`}
             </Text>
@@ -352,6 +452,15 @@ const styles = StyleSheet.create({
 
   // Deliberately identical to the Хэвлэлийн үнэ rows.
   header: { paddingBottom: 10, gap: 10 },
+  categoryRow: { paddingVertical: 2 },
+  categorySeparator: { width: 8 },
+  categoryChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  categoryChipText: { fontSize: 12, fontWeight: '700' },
   customButton: {
     flexDirection: 'row',
     alignItems: 'center',

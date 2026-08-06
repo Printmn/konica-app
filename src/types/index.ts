@@ -89,6 +89,8 @@ export interface WorkLog {
   payType: PayType;
   isDelivery: boolean;
   isTomorrow: boolean;
+  /** `YYYY-MM-DD` chosen when «Маргааш» is set to a specific day, not just "tomorrow". */
+  tomorrowDate?: string;
   customer: string;
   customerType: string;
   paymentStatus: StoredPaymentStatus;

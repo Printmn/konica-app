@@ -2,158 +2,314 @@
   "rules": {
     ".read": false,
     ".write": false,
-
     "pmn": {
       ".read": "auth != null",
       ".write": "auth != null",
-
       "orders": {
-        ".indexOn": ["createdAt", "status", "source", "time"],
+        ".indexOn": [
+          "createdAt",
+          "status",
+          "source",
+          "time"
+        ],
         "$orderId": {
           ".validate": "!newData.exists() || newData.hasChildren()",
-          "id": { ".validate": "newData.isNumber()" },
-          "price": { ".validate": "newData.isNumber() || newData.isString()" },
-          "desc": { ".validate": "newData.isString()" },
-          "paymentType": { ".validate": "newData.isString()" },
-          "time": { ".validate": "newData.isString()" },
-          "$other": { ".validate": true }
+          "id": {
+            ".validate": "newData.isNumber()"
+          },
+          "price": {
+            ".validate": "newData.isNumber() || newData.isString()"
+          },
+          "desc": {
+            ".validate": "newData.isString()"
+          },
+          "paymentType": {
+            ".validate": "newData.isString()"
+          },
+          "time": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "worklogs": {
-        ".indexOn": ["date", "status", "payType", "orderDate"],
+        ".indexOn": [
+          "date",
+          "status",
+          "payType",
+          "orderDate"
+        ],
         "$logId": {
           ".validate": "!newData.exists() || (newData.hasChild('id') && newData.child('id').isNumber())",
-          "id": { ".validate": "newData.isNumber()" },
-          "date": { ".validate": "newData.isString()" },
-          "job": { ".validate": "newData.isString()" },
-          "price": { ".validate": "newData.isString() || newData.isNumber()" },
-          "quantity": { ".validate": "newData.isNumber() || newData.isString()" },
-          "hasVat": { ".validate": "newData.isBoolean()" },
-          "isDelivery": { ".validate": "newData.isBoolean()" },
-          "isTomorrow": { ".validate": "newData.isBoolean()" },
-          "$other": { ".validate": true }
+          "id": {
+            ".validate": "newData.isNumber()"
+          },
+          "date": {
+            ".validate": "newData.isString()"
+          },
+          "job": {
+            ".validate": "newData.isString()"
+          },
+          "price": {
+            ".validate": "newData.isString() || newData.isNumber()"
+          },
+          "quantity": {
+            ".validate": "newData.isNumber() || newData.isString()"
+          },
+          "hasVat": {
+            ".validate": "newData.isBoolean()"
+          },
+          "isDelivery": {
+            ".validate": "newData.isBoolean()"
+          },
+          "isTomorrow": {
+            ".validate": "newData.isBoolean()"
+          },
+          "tomorrowDate": {
+            ".validate": "newData.isString() && newData.val().length <= 10"
+          },
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "logs": {
-        ".indexOn": ["date", "month", "name"],
+        ".indexOn": [
+          "date",
+          "month",
+          "name"
+        ],
         "$logId": {
           ".validate": "!newData.exists() || (newData.hasChild('id') && newData.child('id').isNumber())",
-          "id": { ".validate": "newData.isNumber()" },
-          "name": { ".validate": "newData.isString()" },
-          "date": { ".validate": "newData.isString()" },
-          "month": { ".validate": "newData.isString()" },
-          "time": { ".validate": "newData.isString()" },
-          "isLate": { ".validate": "newData.isBoolean()" },
-          "completedScore": { ".validate": "newData.isNumber()" },
-          "$other": { ".validate": true }
+          "id": {
+            ".validate": "newData.isNumber()"
+          },
+          "name": {
+            ".validate": "newData.isString()"
+          },
+          "date": {
+            ".validate": "newData.isString()"
+          },
+          "month": {
+            ".validate": "newData.isString()"
+          },
+          "time": {
+            ".validate": "newData.isString()"
+          },
+          "isLate": {
+            ".validate": "newData.isBoolean()"
+          },
+          "completedScore": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "employees": {
-        ".indexOn": ["name"],
+        ".indexOn": [
+          "name"
+        ],
         "$employeeId": {
           ".validate": "!newData.exists() || (newData.hasChildren(['id', 'name']) && newData.child('id').isNumber() && newData.child('name').isString())",
-          "id": { ".validate": "newData.isNumber()" },
-          "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
-          "pin": { ".validate": "newData.isString() && newData.val().length == 4" },
-          "restDays": { ".validate": "newData.hasChildren() || !newData.exists()" },
-          "$other": { ".validate": true }
+          "id": {
+            ".validate": "newData.isNumber()"
+          },
+          "name": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+          },
+          "pin": {
+            ".validate": "newData.isString() && newData.val().length == 4"
+          },
+          "restDays": {
+            ".validate": "newData.hasChildren() || !newData.exists()"
+          },
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "inventory": {
-        ".indexOn": ["name", "category"],
+        ".indexOn": [
+          "name",
+          "category"
+        ],
         "$itemId": {
           ".validate": "!newData.exists() || (newData.hasChildren(['id', 'name']) && newData.child('id').isNumber() && newData.child('name').isString())",
-          "id": { ".validate": "newData.isNumber()" },
-          "name": { ".validate": "newData.isString() && newData.val().length > 0" },
-          "price": { ".validate": "newData.isString() || newData.isNumber()" },
-          "stock": { ".validate": "newData.isString() || newData.isNumber()" },
-          "category": { ".validate": "newData.isString()" },
-          "image": { ".validate": "newData.isString()" },
-          "$other": { ".validate": true }
+          "id": {
+            ".validate": "newData.isNumber()"
+          },
+          "name": {
+            ".validate": "newData.isString() && newData.val().length > 0"
+          },
+          "price": {
+            ".validate": "newData.isString() || newData.isNumber()"
+          },
+          "stock": {
+            ".validate": "newData.isString() || newData.isNumber()"
+          },
+          "category": {
+            ".validate": "newData.isString()"
+          },
+          "image": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "services": {
-        ".indexOn": ["name", "category"],
+        ".indexOn": [
+          "name",
+          "category"
+        ],
         "$serviceId": {
           ".validate": "!newData.exists() || (newData.hasChildren(['id', 'name']) && newData.child('id').isNumber() && newData.child('name').isString())",
-          "id": { ".validate": "newData.isNumber()" },
-          "name": { ".validate": "newData.isString() && newData.val().length > 0" },
-          "price": { ".validate": "newData.isString() || newData.isNumber()" },
-          "category": { ".validate": "newData.isString()" },
-          "image": { ".validate": "newData.isString()" },
-          "$other": { ".validate": true }
+          "id": {
+            ".validate": "newData.isNumber()"
+          },
+          "name": {
+            ".validate": "newData.isString() && newData.val().length > 0"
+          },
+          "price": {
+            ".validate": "newData.isString() || newData.isNumber()"
+          },
+          "category": {
+            ".validate": "newData.isString()"
+          },
+          "image": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "tasks": {
         "$taskId": {
           ".validate": "!newData.exists() || (newData.hasChildren(['id', 'text']) && newData.child('id').isNumber() && newData.child('text').isString())",
-          "id": { ".validate": "newData.isNumber()" },
-          "text": { ".validate": "newData.isString() && newData.val().length > 0" },
-          "score": { ".validate": "newData.isNumber()" },
-          "done": { ".validate": "newData.isBoolean()" },
-          "type": { ".validate": "newData.isString()" },
-          "$other": { ".validate": true }
+          "id": {
+            ".validate": "newData.isNumber()"
+          },
+          "text": {
+            ".validate": "newData.isString() && newData.val().length > 0"
+          },
+          "score": {
+            ".validate": "newData.isNumber()"
+          },
+          "done": {
+            ".validate": "newData.isBoolean()"
+          },
+          "type": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "colorlabels": {
         "$labelId": {
           ".validate": "!newData.exists() || (newData.hasChild('id') && newData.child('id').isNumber())",
-          "$other": { ".validate": true }
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "calctypes": {
         "$typeId": {
           ".validate": "!newData.exists() || (newData.hasChild('id') && newData.child('id').isNumber())",
-          "$other": { ".validate": true }
+          "$other": {
+            ".validate": true
+          }
         }
       },
-
       "timesettings": {
         ".validate": "!newData.exists() || newData.hasChild('startTime')",
-        "startTime": { ".validate": "newData.isString()" },
-        "workingDays": { ".validate": "newData.isNumber()" },
-        "penaltyPerMin": { ".validate": "newData.isNumber()" },
-        "onTimeScore": { ".validate": "newData.isNumber()" },
-        "onLeaveScore": { ".validate": "newData.isNumber()" },
-        "$other": { ".validate": true }
+        "startTime": {
+          ".validate": "newData.isString()"
+        },
+        "workingDays": {
+          ".validate": "newData.isNumber()"
+        },
+        "penaltyPerMin": {
+          ".validate": "newData.isNumber()"
+        },
+        "onTimeScore": {
+          ".validate": "newData.isNumber()"
+        },
+        "onLeaveScore": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": true
+        }
       },
-
       "chat": {
-        ".indexOn": ["at", "deviceId", "sender"],
+        ".indexOn": [
+          "at",
+          "deviceId",
+          "sender"
+        ],
         "$messageId": {
           ".validate": "!newData.exists() || (newData.hasChildren(['id', 'sender', 'at', 'deviceId']) && newData.child('id').isString() && newData.child('sender').isString() && newData.child('at').isNumber() && newData.child('deviceId').isString())",
-          "id": { ".validate": "newData.isString()" },
-          "sender": { ".validate": "newData.isString() && newData.val().length <= 60" },
-          "at": { ".validate": "newData.isNumber()" },
-          "deviceId": { ".validate": "newData.isString() && newData.val().length <= 64" },
-          "time": { ".validate": "newData.isString()" },
-          "text": { ".validate": "newData.isString() && newData.val().length <= 4000" },
-          "image": { ".validate": "newData.isString() && newData.val().length <= 400000" },
-          "$other": { ".validate": false }
+          "id": {
+            ".validate": "newData.isString()"
+          },
+          "sender": {
+            ".validate": "newData.isString() && newData.val().length <= 60"
+          },
+          "at": {
+            ".validate": "newData.isNumber()"
+          },
+          "deviceId": {
+            ".validate": "newData.isString() && newData.val().length <= 64"
+          },
+          "time": {
+            ".validate": "newData.isString()"
+          },
+          "text": {
+            ".validate": "newData.isString() && newData.val().length <= 4000"
+          },
+          "image": {
+            ".validate": "newData.isString() && newData.val().length <= 400000"
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       },
-
       "invoices": {
-        ".indexOn": ["at", "deviceId"],
+        ".indexOn": [
+          "at",
+          "deviceId"
+        ],
         "$invoiceNumber": {
           ".validate": "!newData.exists() || (newData.hasChildren(['number', 'deviceId', 'at']) && newData.child('number').isString() && newData.child('deviceId').isString() && newData.child('at').isNumber())",
-          "number": { ".validate": "newData.isString() && newData.val().length <= 40" },
-          "deviceId": { ".validate": "newData.isString() && newData.val().length <= 64" },
-          "at": { ".validate": "newData.isNumber()" },
-          "customer": { ".validate": "newData.isString() && newData.val().length <= 200" },
-          "$other": { ".validate": false }
+          "number": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "deviceId": {
+            ".validate": "newData.isString() && newData.val().length <= 64"
+          },
+          "at": {
+            ".validate": "newData.isNumber()"
+          },
+          "customer": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       },
-
-      "$unknown": { ".validate": false }
+      "$unknown": {
+        ".validate": false
+      }
     }
   }
 }

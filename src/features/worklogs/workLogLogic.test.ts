@@ -14,6 +14,7 @@ import {
   applyUnitPrice,
   applyWorkLogEdit,
   createWorkLog,
+  deadlineLabel,
   emptyWorkLogForm,
   imageForJob,
   productImageMap,
@@ -258,6 +259,48 @@ describe('unitPriceOf', () => {
 
   it('is zero for a job with no price at all', () => {
     expect(unitPriceOf({ price: '', unitPrice: '', quantity: 5 })).toBe(0);
+  });
+});
+
+/**
+ * «Маргааш» began as a flag and is now a chosen day, so a job can be due next
+ * week. The word is only correct when no day was picked — the Excel export is
+ * what the shop reconciles from, and it must not say "tomorrow" beside a date
+ * seven days out.
+ */
+describe('deadlineLabel', () => {
+  it('shows the chosen day and time', () => {
+    expect(
+      deadlineLabel({ deadline: '14:00', isTomorrow: true, tomorrowDate: '2026-08-12' }),
+    ).toBe('08/12 14:00');
+  });
+
+  it('still says «Маргааш» when the flag is set without a day', () => {
+    // Rows booked before the picker existed carry the flag and nothing else.
+    expect(deadlineLabel({ deadline: '14:00', isTomorrow: true })).toBe('Маргааш 14:00');
+    expect(deadlineLabel({ deadline: '14:00', isTomorrow: true, tomorrowDate: '' })).toBe(
+      'Маргааш 14:00',
+    );
+  });
+
+  it('is just the time for a job due the same day', () => {
+    expect(deadlineLabel({ deadline: '16:30', isTomorrow: false })).toBe('16:30');
+  });
+
+  it('shows the day alone when no time was set', () => {
+    expect(deadlineLabel({ deadline: '', isTomorrow: true, tomorrowDate: '2026-08-12' })).toBe(
+      '08/12',
+    );
+  });
+
+  it('is empty when there is no deadline at all', () => {
+    expect(deadlineLabel({ deadline: '', isTomorrow: false })).toBe('');
+  });
+
+  it('ignores a stored date that is not a real one', () => {
+    expect(
+      deadlineLabel({ deadline: '09:00', isTomorrow: true, tomorrowDate: 'маргааш' }),
+    ).toBe('Маргааш 09:00');
   });
 });
 

@@ -3,7 +3,7 @@ import type { CellObject, WorkSheet } from 'xlsx-js-style';
 
 import { MAX_MONTHLY_BONUS } from '@/constants/config';
 import { dailyMaxScore } from '@/features/performance/bonusCalculator';
-import { performanceLabel } from '@/features/worklogs/workLogLogic';
+import { deadlineLabel, performanceLabel } from '@/features/worklogs/workLogLogic';
 import { totalsByPayType } from '@/features/reports/reportCalculator';
 import { EXCEL_COLORS } from '@/theme/colors';
 import type { EmployeePerformance, HabitTask, Result, WorkLog } from '@/types';
@@ -115,7 +115,7 @@ const workLogRow = (log: WorkLog, index: number, advancePink: boolean): SheetRow
     index + 1,
     log.job || '',
     log.receivedTime || '',
-    log.isTomorrow ? `Маргааш ${log.deadline || ''}` : log.deadline || '',
+    deadlineLabel(log),
     log.phone || '',
     log.price ? `${formatNumber(Number(log.price))}₮ ${payTypeAbbr(log.payType)}` : '',
     log.note || '',

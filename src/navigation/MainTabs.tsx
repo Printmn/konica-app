@@ -13,6 +13,7 @@ import { HomeScreen } from '@/screens/home/HomeScreen';
 import { InventoryScreen } from '@/screens/inventory/InventoryScreen';
 import { OrdersScreen } from '@/screens/orders/OrdersScreen';
 import { PerformanceScreen } from '@/screens/performance/PerformanceScreen';
+import { QuickPrintScreen } from '@/screens/quickprint/QuickPrintScreen';
 import { ReportScreen } from '@/screens/report/ReportScreen';
 import { ServicesScreen } from '@/screens/services/ServicesScreen';
 import { useAppTheme } from '@/theme/ThemeProvider';
@@ -33,6 +34,7 @@ const SCREENS: Record<keyof MainTabParamList, React.ComponentType> = {
   Home: HomeScreen,
   Orders: OrdersScreen,
   Daily: DailyScreen,
+  QuickPrint: QuickPrintScreen,
   Inventory: InventoryScreen,
   Services: ServicesScreen,
   Report: ReportScreen,

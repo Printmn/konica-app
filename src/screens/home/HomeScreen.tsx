@@ -13,14 +13,12 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { StatTile } from '@/components/ui/StatTile';
 import { useData } from '@/features/data/DataContext';
 import { lowStockItems } from '@/features/inventory/inventoryLogic';
-import { calculateDailyReport } from '@/features/reports/reportCalculator';
 import { visibleWorkLogs } from '@/features/worklogs/workLogLogic';
 import { useScreenBack } from '@/hooks/useScreenBack';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { RootStackParamList } from '@/navigation/types';
 import { longDateLabel, todayString } from '@/utils/date';
-import { formatCurrency } from '@/utils/price';
 
 /**
  * Dashboard.
@@ -67,7 +65,7 @@ const SHORTCUTS: Shortcut[] = [
   },
   {
     key: 'chat',
-    label: 'Дотоод чат',
+    label: 'Чат',
     hint: 'Мессеж',
     icon: 'message-text',
     tone: 'blue',
@@ -122,7 +120,6 @@ export function HomeScreen(): React.JSX.Element {
 
   const today = todayString();
 
-  const report = useMemo(() => calculateDailyReport(workLogs, today), [workLogs, today]);
   const openJobs = useMemo(
     () => visibleWorkLogs(workLogs, null, today).filter((log) => log.status !== 'Болсон'),
     [workLogs, today],
