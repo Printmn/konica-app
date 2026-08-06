@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Divider, List, SegmentedButtons, TextInput } from 'react-native-paper';
 
 import { useAuth } from '@/authentication/AuthContext';
@@ -13,6 +13,7 @@ import { parseWorkbook } from '@/services/export/excelService';
 import { pickSpreadsheet } from '@/services/media/imageService';
 import { clearErrorLog, formatErrorLog } from '@/services/monitoring/crashReporter';
 import { saveTextAndShare } from '@/services/export/fileService';
+import { clearExportFolder } from '@/services/export/fileService';
 import { createBackup, restoreBackup } from '@/services/sync/backupService';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useToast } from '@/hooks/useToast';
@@ -85,6 +86,16 @@ export function SettingsScreen(): React.JSX.Element {
     if (!result.ok) showError(result.error);
     else show('Нөөц хуулбар үүслээ', 'success');
   }, [show, showError]);
+
+  /**
+   * Forgets the Android export folder so the next export offers the picker.
+   * There is no way to show a folder-chooser for an already-granted folder, so
+   * changing it means clearing the choice and letting the next export re-ask.
+   */
+  const resetExportFolder = useCallback(async () => {
+    await clearExportFolder();
+    show('Дараагийн тайлан гаргахад хавтас сонгоно', 'success');
+  }, [show]);
 
   const runRestore = useCallback(async () => {
     setBusy(true);
@@ -269,6 +280,24 @@ export function SettingsScreen(): React.JSX.Element {
                 Сэргээх
               </Button>
             </View>
+
+            {Platform.OS === 'android' ? (
+              <>
+                <Text style={[styles.hint, { color: theme.custom.mutedText }]}>
+                  Excel тайлан таны сонгосон хавтас руу шууд хадгалагдана. Өөр
+                  хавтас руу хадгалахыг хүсвэл доорхыг дарна уу — дараагийн
+                  тайлан гаргахад хавтас сонгох цонх дахин гарна.
+                </Text>
+                <Button
+                  mode="text"
+                  icon="folder-cog-outline"
+                  onPress={() => void resetExportFolder()}
+                  disabled={busy}
+                >
+                  Хадгалах хавтсыг өөрчлөх
+                </Button>
+              </>
+            ) : null}
           </Card>
         ) : null}
 

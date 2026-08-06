@@ -251,8 +251,14 @@ export function OrdersScreen(): React.JSX.Element {
       ? logs
       : workLogs.filter((log) => log.date === today);
     const result = await exportDailyWorkLogs(exportLogs, exportDate);
-    if (!result.ok) showError(result.error);
-  }, [archiveDate, today, logs, workLogs, showError]);
+    if (!result.ok) {
+      showError(result.error);
+      return;
+    }
+    // Saving straight into a folder happens silently, so without this the
+    // button looks like it did nothing at all.
+    show('Excel хадгалагдлаа', 'success');
+  }, [archiveDate, today, logs, workLogs, show, showError]);
 
   // ── Render ─────────────────────────────────────────────────────────
 

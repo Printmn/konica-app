@@ -30,6 +30,8 @@ export const STORAGE_KEYS = {
   lastBackup: 'pmn_last_backup',
   /** Highest invoice number actually issued, so the next one follows on. */
   lastInvoiceNumber: 'pmn_last_invoice_number',
+  /** Android folder the shop picked for exports, as a Storage Access Framework URI. */
+  exportFolder: 'pmn_export_folder',
 } as const;
 
 /** Values that must never touch AsyncStorage — these go to SecureStore. */

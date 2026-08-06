@@ -1,6 +1,10 @@
 import { type Directory, File, Paths } from 'expo-file-system';
+import { StorageAccessFramework } from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 
+import { STORAGE_KEYS } from '@/constants/storageKeys';
+import { readJson, removeKey, writeJson } from '@/services/storage/asyncStorage';
 import type { Result } from '@/types';
 import { base64ToBytes } from '@/utils/base64';
 import { logger } from '@/utils/logger';
@@ -145,6 +149,64 @@ export async function shareFile(
   }
 }
 
+/**
+ * Saves straight into a folder the shop chose, on Android.
+ *
+ * The share sheet is the only option iOS offers, but on Android it is a detour:
+ * an export is something you keep, and going through "share → save to Files"
+ * every day for the daily report is three taps that never change. The Storage
+ * Access Framework lets the folder be picked once — Downloads, say — and every
+ * export after that lands there silently.
+ *
+ * Returns `null` when this route is unavailable, so the caller falls back to
+ * sharing rather than failing. That covers iOS, a refused permission, and a
+ * folder that has since been deleted or had its access revoked; in the last
+ * case the remembered folder is forgotten so the next export asks again
+ * instead of failing forever.
+ */
+async function saveToChosenFolder(
+  fileName: string,
+  base64: string,
+  kind: ExportKind,
+): Promise<string | null> {
+  if (Platform.OS !== 'android') return null;
+
+  let folder = await readJson<string>(STORAGE_KEYS.exportFolder, '');
+
+  if (folder === '') {
+    try {
+      const permission = await StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!permission.granted) return null;
+      folder = permission.directoryUri;
+      await writeJson(STORAGE_KEYS.exportFolder, folder);
+    } catch (cause) {
+      logger.warn('Could not ask for an export folder', cause);
+      return null;
+    }
+  }
+
+  try {
+    const uri = await StorageAccessFramework.createFileAsync(
+      folder,
+      safeName(fileName),
+      MIME[kind],
+    );
+    await StorageAccessFramework.writeAsStringAsync(uri, base64, { encoding: 'base64' });
+    return uri;
+  } catch (cause) {
+    logger.warn(`Saving into the chosen folder failed for "${fileName}"`, cause);
+    // The folder is gone or access was withdrawn. Forget it so the next export
+    // offers the picker again, and share this one so nothing is lost now.
+    await removeKey(STORAGE_KEYS.exportFolder);
+    return null;
+  }
+}
+
+/** Forgets the export folder, so the next export asks for one again. */
+export async function clearExportFolder(): Promise<void> {
+  await removeKey(STORAGE_KEYS.exportFolder);
+}
+
 /** Write-then-share, the shape almost every export needs. */
 export async function saveAndShare(
   fileName: string,
@@ -152,6 +214,9 @@ export async function saveAndShare(
   kind: ExportKind,
   dialogTitle: string,
 ): Promise<Result<string>> {
+  const saved = await saveToChosenFolder(fileName, base64, kind);
+  if (saved !== null) return ok(saved);
+
   const written = await writeBase64File(fileName, base64);
   if (!written.ok) return written;
   const shared = await shareFile(written.value, kind, dialogTitle);

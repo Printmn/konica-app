@@ -107,8 +107,14 @@ export function ReportScreen(): React.JSX.Element {
     setBusy(true);
     const result = await exportDailyWorkLogs(report.logs, today);
     setBusy(false);
-    if (!result.ok) showError(result.error);
-  }, [report.logs, today, showError]);
+    if (!result.ok) {
+      showError(result.error);
+      return;
+    }
+    // Saving straight into a folder happens silently, so without this the
+    // button looks like it did nothing at all.
+    show('Excel хадгалагдлаа', 'success');
+  }, [report.logs, today, show, showError]);
 
   if (!can('viewReport')) {
     return (
