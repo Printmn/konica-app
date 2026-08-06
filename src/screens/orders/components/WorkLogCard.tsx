@@ -222,7 +222,9 @@ function WorkLogCardBase({
               accessibilityRole="button"
               style={[styles.docButton, { borderColor: `${tint}55`, backgroundColor: `${tint}12` }]}
             >
-              <Text style={[styles.docLabel, { color: tint }]}>{label}</Text>
+              <Text style={[styles.docLabel, { color: tint }]} numberOfLines={2}>
+                {label}
+              </Text>
             </Pressable>
           ))}
         </View>
@@ -306,9 +308,27 @@ const styles = StyleSheet.create({
   },
   noteText: { flex: 1, fontSize: 12, fontWeight: '700' },
 
-  docRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12, paddingBottom: 10 },
-  docButton: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  docLabel: { fontSize: 10, fontWeight: '700' },
+  docRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingBottom: 10 },
+  /**
+   * Equal thirds rather than intrinsic widths.
+   *
+   * The row used to wrap and let each button size itself, and on Android the
+   * longest label — «Нэхэмжлэх» sat next to «Зарлагын баримт» — was measured
+   * short and clipped to nothing on some screen widths. Fixed thirds mean the
+   * width no longer depends on the text, and the text is allowed a second line
+   * rather than being cut.
+   */
+  docButton: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docLabel: { fontSize: 10, fontWeight: '700', textAlign: 'center' },
 });
 
 export const WorkLogCard = memo(
