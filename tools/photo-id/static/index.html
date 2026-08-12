@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="mn">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Цээж зураг бэлтгэх</title>
+    <style>
+      :root {
+        --brand: #1a56db;
+        --green: #16a34a;
+        --border: #dbeafe;
+        --muted: #6b7280;
+        --bg: #eff6ff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px 16px 48px;
+        background: var(--bg);
+        color: #111827;
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+      .wrap { max-width: 720px; margin: 0 auto; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+      .card {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 12px;
+      }
+      .label {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .chip {
+        flex: 1 1 0;
+        min-width: 90px;
+        border: 1px solid var(--border);
+        background: #fff;
+        border-radius: 999px;
+        padding: 12px 10px;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+        text-align: center;
+      }
+      .chip[aria-pressed='true'] { background: var(--green); border-color: var(--green); color: #fff; }
+      .drop {
+        border: 2px dashed var(--brand);
+        border-radius: 16px;
+        padding: 32px 16px;
+        text-align: center;
+        cursor: pointer;
+        color: var(--brand);
+        font-weight: 700;
+      }
+      .drop.over { background: #dbeafe; }
+      button.go {
+        width: 100%;
+        border: 0;
+        border-radius: 14px;
+        background: var(--brand);
+        color: #fff;
+        font-size: 16px;
+        font-weight: 800;
+        padding: 16px;
+        cursor: pointer;
+      }
+      button.go:disabled { opacity: 0.45; cursor: default; }
+      .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      @media (max-width: 560px) { .panes { grid-template-columns: 1fr; } }
+      .pane { text-align: center; }
+      .pane img { max-width: 100%; border: 1px solid var(--border); border-radius: 10px; }
+      .note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+      .error {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #b91c1c;
+        border-radius: 12px;
+        padding: 12px;
+        font-size: 14px;
+      }
+      a.dl {
+        display: inline-block;
+        margin-top: 10px;
+        background: var(--green);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 800;
+        border-radius: 12px;
+        padding: 12px 20px;
+      }
+      .hide { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Цээж зураг бэлтгэх</h1>
+      <p class="sub">
+        Зураг оруулаад хэмжээгээ сонго. Нүүрийг өөрөө олж, арын дэвсгэрийг цагаан
+        болгож, 300 DPI-аар хэвлэхэд бэлэн болгоно.
+      </p>
+
+      <div class="card">
+        <div class="label">1. ЗУРАГ</div>
+        <div class="drop" id="drop">Энд дарж зураг сонгох, эсвэл чирж оруулах</div>
+        <input type="file" id="file" accept="image/*" class="hide" />
+      </div>
+
+      <div class="card">
+        <div class="label">2. ХЭМЖЭЭ</div>
+        <div class="row" id="sizes"></div>
+      </div>
+
+      <div class="card">
+        <div class="label">3. АРЫН ДЭВСГЭР</div>
+        <div class="row" id="backgrounds">
+          <button class="chip" data-bg="white" aria-pressed="true">Цагаан</button>
+          <button class="chip" data-bg="blue" aria-pressed="false">Цэнхэр</button>
+          <button class="chip" data-bg="grey" aria-pressed="false">Саарал</button>
+          <button class="chip" data-bg="keep" aria-pressed="false">Хэвээр</button>
+        </div>
+      </div>
+
+      <button class="go" id="go" disabled>Боловсруулах</button>
+
+      <div id="message" class="card error hide"></div>
+
+      <div class="card hide" id="output">
+        <div class="label">ҮР ДҮН</div>
+        <div class="panes">
+          <div class="pane">
+            <div class="note">Эх зураг</div>
+            <img id="before" alt="эх зураг" />
+          </div>
+          <div class="pane">
+            <div class="note">Бэлэн зураг</div>
+            <img id="after" alt="бэлэн зураг" />
+            <br />
+            <a class="dl" id="download" download>Татаж авах</a>
+          </div>
+        </div>
+        <div class="note" id="stats"></div>
+      </div>
+    </div>
+
+    <script>
+      const state = { file: null, size: '3x4', background: 'white' };
+
+      const $ = (id) => document.getElementById(id);
+      const drop = $('drop');
+      const fileInput = $('file');
+
+      // Size buttons come from the server so the list can never drift from
+      // what the cropper actually supports.
+      fetch('/api/sizes')
+        .then((r) => r.json())
+        .then(({ sizes }) => {
+          $('sizes').innerHTML = sizes
+            .map(
+              (s, i) =>
+                `<button class="chip" data-size="${s.key}" aria-pressed="${i === 0}">` +
+                `${s.label}<br><span style="font-weight:600;font-size:11px;opacity:.8">` +
+                `${s.pixels[0]}×${s.pixels[1]}px</span></button>`,
+            )
+            .join('');
+          state.size = sizes[0].key;
+          bindChips('#sizes [data-size]', 'size');
+        });
+
+      function bindChips(selector, key) {
+        document.querySelectorAll(selector).forEach((chip) => {
+          chip.addEventListener('click', () => {
+            document
+              .querySelectorAll(selector)
+              .forEach((other) => other.setAttribute('aria-pressed', 'false'));
+            chip.setAttribute('aria-pressed', 'true');
+            state[key] = chip.dataset[key];
+          });
+        });
+      }
+      bindChips('#backgrounds [data-bg]', 'bg');
+      document.querySelectorAll('#backgrounds [data-bg]').forEach((chip) => {
+        chip.addEventListener('click', () => {
+          state.background = chip.dataset.bg;
+        });
+      });
+
+      drop.addEventListener('click', () => fileInput.click());
+      ['dragover', 'dragenter'].forEach((event) =>
+        drop.addEventListener(event, (e) => {
+          e.preventDefault();
+          drop.classList.add('over');
+        }),
+      );
+      ['dragleave', 'drop'].forEach((event) =>
+        drop.addEventListener(event, () => drop.classList.remove('over')),
+      );
+      drop.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer.files[0]) accept(e.dataTransfer.files[0]);
+      });
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files[0]) accept(fileInput.files[0]);
+      });
+
+      function accept(file) {
+        state.file = file;
+        drop.textContent = file.name;
+        $('go').disabled = false;
+        $('before').src = URL.createObjectURL(file);
+      }
+
+      function fail(text) {
+        const box = $('message');
+        box.textContent = text;
+        box.classList.remove('hide');
+      }
+
+      $('go').addEventListener('click', async () => {
+        if (!state.file) return;
+        $('message').classList.add('hide');
+        $('go').disabled = true;
+        $('go').textContent = 'Боловсруулж байна…';
+
+        const body = new FormData();
+        body.append('photo', state.file);
+        body.append('size', state.size);
+        // «Хэвээр» means keep the wall: same crop, no segmentation pass.
+        body.append('background', state.background === 'keep' ? 'white' : state.background);
+        body.append('remove_background', state.background === 'keep' ? 'false' : 'true');
+
+        try {
+          const response = await fetch('/api/process', { method: 'POST', body });
+          if (!response.ok) {
+            const detail = await response.json().catch(() => ({}));
+            throw new Error(detail.detail || 'Боловсруулж чадсангүй.');
+          }
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          $('after').src = url;
+          $('download').href = url;
+          $('download').download = `tseej-${state.size}.jpg`;
+          $('output').classList.remove('hide');
+
+          const removed = response.headers.get('X-Background-Removed') === '1';
+          $('stats').textContent =
+            `${response.headers.get('X-Pixels')} · 300 DPI · ` +
+            `толгойн эзлэх хувь ${Math.round(response.headers.get('X-Head-Share') * 100)}% · ` +
+            (removed ? 'дэвсгэр солигдсон' : 'дэвсгэр хэвээр (rembg суулгаагүй)');
+        } catch (error) {
+          fail(error.message);
+        } finally {
+          $('go').disabled = false;
+          $('go').textContent = 'Боловсруулах';
+        }
+      });
+    </script>
+  </body>
+</html>

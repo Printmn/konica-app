@@ -1,4 +1,9 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  type NavigationProp,
+  type RouteProp,
+} from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
@@ -38,7 +43,7 @@ import {
 } from '@/features/quotation/quotationLogic';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useToast } from '@/hooks/useToast';
-import type { RootStackParamList } from '@/navigation/types';
+import type { MainTabParamList } from '@/navigation/types';
 import { getDeviceId } from '@/services/device/deviceId';
 import { exportQuotationPdf, printQuotation } from '@/services/export/pdfService';
 import { buildQuotationHtml } from '@/services/export/quotationTemplate';
@@ -62,7 +67,7 @@ import { DocumentPreview } from './DocumentPreview';
  * can also go straight to a printer.
  */
 
-type QuotationRoute = RouteProp<RootStackParamList, 'Quotation'>;
+type QuotationRoute = RouteProp<MainTabParamList, 'Quotation'>;
 
 /**
  * Reads a percentage box. A half-typed "12." must not collapse to 0 and wipe
@@ -89,7 +94,7 @@ const toAmount = (raw: string): number => {
 
 export function QuotationScreen(): React.JSX.Element {
   const theme = useAppTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<MainTabParamList, 'Quotation'>>();
   const route = useRoute<QuotationRoute>();
   const { can } = useAuth();
   const { show, showError } = useToast();

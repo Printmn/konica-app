@@ -62,6 +62,16 @@ export interface AppTheme extends MD3Theme {
     subtleBorder: string;
     mutedText: string;
     accent: string;
+    /**
+     * The fill behind a chosen item in a top-of-screen menu.
+     *
+     * Blue was doing two jobs at once — it is the brand colour on headers and
+     * buttons, so a chosen tab read as decoration rather than as a state. Green
+     * is used for nothing else, which is what makes the current choice
+     * findable at a glance across a busy counter.
+     */
+    selected: string;
+    onSelected: string;
   };
 }
 
@@ -76,6 +86,11 @@ export const lightTheme: AppTheme = {
     primaryContainer: BRAND.border,
     onPrimaryContainer: BRAND.primaryDark,
     secondary: BRAND.primaryLight,
+    // Paper paints the chosen segment of `SegmentedButtons` with
+    // `secondaryContainer`, so setting it here turns every top menu in the app
+    // green at once rather than screen by screen.
+    secondaryContainer: BRAND.featuredActive,
+    onSecondaryContainer: NEUTRAL.white,
     background: BRAND.surfaceTint,
     onBackground: '#111827',
     surface: NEUTRAL.white,
@@ -101,6 +116,8 @@ export const lightTheme: AppTheme = {
     subtleBorder: BRAND.border,
     mutedText: '#6b7280',
     accent: BRAND.accent,
+    selected: BRAND.featuredActive,
+    onSelected: NEUTRAL.white,
   },
 };
 
@@ -115,6 +132,8 @@ export const darkTheme: AppTheme = {
     primaryContainer: '#1e3a8a',
     onPrimaryContainer: '#dbeafe',
     secondary: '#93c5fd',
+    secondaryContainer: BRAND.featured,
+    onSecondaryContainer: '#052e16',
     background: '#0b1220',
     onBackground: NEUTRAL.slate200,
     surface: '#111a2b',
@@ -140,5 +159,7 @@ export const darkTheme: AppTheme = {
     subtleBorder: '#243049',
     mutedText: NEUTRAL.slate400,
     accent: BRAND.accent,
+    selected: BRAND.featured,
+    onSelected: '#052e16',
   },
 };

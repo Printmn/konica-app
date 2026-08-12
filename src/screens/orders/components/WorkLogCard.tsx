@@ -2,6 +2,7 @@ import React, { memo, useCallback } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
+import { splitSummary } from '@/features/worklogs/paySplit';
 import { deadlineLabel, quantityLabel, workLogRowColor } from '@/features/worklogs/workLogLogic';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { DocType, WorkLog, WorkStatus } from '@/types';
@@ -25,10 +26,18 @@ const STATUS_BUTTONS: { status: WorkStatus; label: string; color: string; fg: st
   { status: 'Болсон', label: 'Болсон', color: '#16a34a', fg: '#ffffff' },
 ];
 
-const DOC_BUTTONS: { docType: DocType; label: string; tint: string }[] = [
-  { docType: 'quotation', label: '📋 Үнийн санал', tint: '#2563eb' },
-  { docType: 'invoice', label: '🧾 Нэхэмжлэх', tint: '#2563eb' },
-  { docType: 'receipt', label: '💵 Зарлагын баримт', tint: '#64748b' },
+/**
+ * The icon and the words are separate strings on purpose.
+ *
+ * As one label — `'🧾 Нэхэмжлэх'` — Android measured the line by its leading
+ * emoji and clipped everything after it, so the buttons showed a centred icon
+ * and no text at all. Stacked, the words get the button's full width and wrap
+ * instead of disappearing.
+ */
+const DOC_BUTTONS: { docType: DocType; icon: string; label: string; tint: string }[] = [
+  { docType: 'quotation', icon: '📋', label: 'Үнийн санал', tint: '#2563eb' },
+  { docType: 'invoice', icon: '🧾', label: 'Нэхэмжлэх', tint: '#2563eb' },
+  { docType: 'receipt', icon: '💵', label: 'Зарлага', tint: '#64748b' },
 ];
 
 interface WorkLogCardProps {
@@ -185,8 +194,12 @@ function WorkLogCardBase({
             ) : null}
             {log.payType ? (
               <View style={[styles.payChip, { backgroundColor: theme.colors.surfaceVariant }]}>
+                {/* A split job names its parts: «Холимог» alone tells the
+                    counter nothing it can hand over at shift change. */}
                 <Text style={[styles.payChipText, { color: theme.colors.onSurfaceVariant }]}>
-                  {log.payType}
+                  {log.payType === 'Холимог' && log.paySplit
+                    ? splitSummary(log.paySplit)
+                    : log.payType}
                 </Text>
               </View>
             ) : null}
@@ -215,13 +228,15 @@ function WorkLogCardBase({
 
       {log.price && canEdit ? (
         <View style={styles.docRow}>
-          {DOC_BUTTONS.map(({ docType, label, tint }) => (
+          {DOC_BUTTONS.map(({ docType, icon, label, tint }) => (
             <Pressable
               key={docType}
               onPress={() => onCreateDocument(log, docType)}
               accessibilityRole="button"
+              accessibilityLabel={label}
               style={[styles.docButton, { borderColor: `${tint}55`, backgroundColor: `${tint}12` }]}
             >
+              <Text style={styles.docIcon}>{icon}</Text>
               <Text style={[styles.docLabel, { color: tint }]} numberOfLines={2}>
                 {label}
               </Text>
@@ -328,7 +343,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  docLabel: { fontSize: 10, fontWeight: '700', textAlign: 'center' },
+  docIcon: { fontSize: 13, lineHeight: 16 },
+  docLabel: { fontSize: 10, fontWeight: '700', textAlign: 'center', lineHeight: 13 },
 });
 
 export const WorkLogCard = memo(

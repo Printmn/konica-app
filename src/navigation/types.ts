@@ -16,6 +16,7 @@ export type MainTabParamList = {
   Orders: { prefill?: WorkLogPrefill } | undefined;
   Daily: undefined;
   QuickPrint: undefined;
+  Quotation: { prefill?: QuotationPrefill; docType?: DocType } | undefined;
   Inventory: undefined;
   Services: undefined;
   Report: undefined;
@@ -28,7 +29,6 @@ export type RootStackParamList = {
   /** Shown once, on a fresh install, before any PIN exists. */
   PinSetup: undefined;
   Main: NavigatorScreenParams<MainTabParamList>;
-  Quotation: { prefill?: QuotationPrefill; docType?: DocType } | undefined;
   Admin: undefined;
   Settings: undefined;
   ImageViewer: { uri: string };

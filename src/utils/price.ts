@@ -48,6 +48,8 @@ export const payTypeAbbr = (payType: string | undefined): string => {
       return 'д';
     case 'Карт':
       return 'к';
+    case 'Холимог':
+      return 'х';
     default:
       return payType ?? '';
   }

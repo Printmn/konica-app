@@ -10,9 +10,7 @@ import { roleTitle } from '@/authentication/permissions';
 import { OfflineBanner, SyncErrorBanner } from '@/components/feedback/StateViews';
 import { Screen } from '@/components/layout/Screen';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
-import { StatTile } from '@/components/ui/StatTile';
 import { useData } from '@/features/data/DataContext';
-import { lowStockItems } from '@/features/inventory/inventoryLogic';
 import { visibleWorkLogs } from '@/features/worklogs/workLogLogic';
 import { useScreenBack } from '@/hooks/useScreenBack';
 import { useResponsive } from '@/hooks/useResponsive';
@@ -97,7 +95,7 @@ const SHORTCUTS: Shortcut[] = [
     icon: 'credit-card-outline',
     tone: 'blue',
     capability: 'viewQuotation',
-    go: (nav) => nav.navigate('Quotation'),
+    go: (nav) => nav.navigate('Main', { screen: 'Quotation' }),
   },
   // {
   //   key: 'admin',
@@ -115,7 +113,7 @@ export function HomeScreen(): React.JSX.Element {
   const onBack = useScreenBack();
   const navigation = useNavigation<Nav>();
   const { role, workerName, can } = useAuth();
-  const { workLogs, inventory, isOffline, pendingWrites, syncError, syncNow } = useData();
+  const { workLogs, isOffline, pendingWrites, syncError, syncNow } = useData();
   const { columns, gutter } = useResponsive();
 
   const today = todayString();
@@ -124,7 +122,6 @@ export function HomeScreen(): React.JSX.Element {
     () => visibleWorkLogs(workLogs, null, today).filter((log) => log.status !== 'Болсон'),
     [workLogs, today],
   );
-  const lowStock = useMemo(() => lowStockItems(inventory), [inventory]);
 
   const visibleShortcuts = useMemo(
     () => SHORTCUTS.filter((shortcut) => can(shortcut.capability)),
@@ -152,13 +149,29 @@ export function HomeScreen(): React.JSX.Element {
         onBack={onBack}
         subtitle={`${roleTitle(role, workerName)} · ${longDateLabel()}`}
         right={
-          <Pressable
-            onPress={() => navigation.navigate('Settings')}
-            hitSlop={12}
-            accessibilityLabel="Тохиргоо"
-          >
-            <Icon source="cog-outline" size={22} color="#ffffff" />
-          </Pressable>
+          <View style={styles.headerRight}>
+            {/* The one number worth carrying on every screen: what is still
+                open. Stock warnings belong on the stock screen, where the
+                shelf they refer to actually is. */}
+            {openJobs.length > 0 ? (
+              <Pressable
+                onPress={() => navigation.navigate('Main', { screen: 'Orders' })}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={`Дуусаагүй ${openJobs.length} ажил`}
+                style={styles.headerBadge}
+              >
+                <Text style={styles.headerBadgeText}>📋 {openJobs.length}</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => navigation.navigate('Settings')}
+              hitSlop={12}
+              accessibilityLabel="Тохиргоо"
+            >
+              <Icon source="cog-outline" size={22} color="#ffffff" />
+            </Pressable>
+          </View>
         }
       />
 
@@ -171,42 +184,6 @@ export function HomeScreen(): React.JSX.Element {
         contentContainerStyle={[styles.content, { paddingHorizontal: gutter }]}
         showsVerticalScrollIndicator={false}
       >
-        {can('viewReport') ? (
-          <View style={styles.stats}>
-            <StatTile
-              label="Дуусах гэж буй бараа"
-              value={String(lowStock.length)}
-              icon="📦"
-              emphasis
-            />
-            <StatTile
-              label="Дуусаагүй ажил"
-              value={String(openJobs.length)}
-              icon="📋"
-              tint="#f59e0b"
-            />
-          </View>
-        ) : null}
-
-        {lowStock.length > 0 && can('viewInventory') ? (
-          <Pressable
-            onPress={() => navigation.navigate('Main', { screen: 'Inventory' })}
-            style={styles.warning}
-            accessibilityRole="button"
-          >
-            <Text style={styles.warningTitle}>
-              📦 Үлдэгдэл багатай бараа ({lowStock.length})
-            </Text>
-
-            <Text style={styles.warningBody} numberOfLines={1}>
-              {lowStock
-                .slice(0, 3)
-                .map((item) => item.name)
-                .join(" • ")}
-            </Text>
-          </Pressable>
-        ) : null}
-
         {featured.map((shortcut) => (
           <Pressable
             key={shortcut.key}
@@ -276,7 +253,14 @@ export function HomeScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   content: { paddingVertical: 16, gap: 16 },
-  stats: { flexDirection: 'row', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerBadge: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  headerBadgeText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
   warning: {
     backgroundColor: '#fef3c7',
     borderColor: '#fcd34d',

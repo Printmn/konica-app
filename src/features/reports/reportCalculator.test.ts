@@ -46,6 +46,24 @@ describe('calculateDailyReport', () => {
     expect(report.totalRevenue).toBe(60000);
   });
 
+  it('puts each half of a mixed payment in its own column', () => {
+    const report = calculateDailyReport(
+      [
+        log({
+          price: '5000',
+          payType: 'Холимог',
+          paySplit: { cash: 2000, card: 3000, transfer: 0 },
+        }),
+        log({ price: '10000', payType: 'Бэлэн' }),
+      ],
+      '2026-08-04',
+    );
+    expect(report.totalCash).toBe(12000);
+    expect(report.totalCard).toBe(3000);
+    expect(report.totalTransfer).toBe(0);
+    expect(report.totalRevenue).toBe(15000);
+  });
+
   it('reports revenue with VAT included but the VAT line separately', () => {
     const report = calculateDailyReport(
       [log({ price: '10000', hasVat: true }), log({ price: '10000', hasVat: false })],
@@ -72,8 +90,15 @@ describe('totalsByPayType', () => {
     const totals = totalsByPayType([
       log({ price: '1000', payType: 'Бэлэн' }),
       log({ price: '2000', payType: undefined }),
+      log({
+        price: '5000',
+        payType: 'Холимог',
+        paySplit: { cash: 2000, card: 3000, transfer: 0 },
+      }),
     ]);
-    expect(totals).toEqual({ Бэлэн: 1000, Бусад: 2000 });
+    // The mixed row is booked under the methods it was paid with, not under
+    // «Холимог» — the export's summary rows have to reconcile with the till.
+    expect(totals).toEqual({ Бэлэн: 3000, Бусад: 2000, Карт: 3000 });
   });
 });
 

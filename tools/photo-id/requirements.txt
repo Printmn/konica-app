@@ -1,0 +1,13 @@
+# Core — the crop works with just these.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pillow>=10.3
+opencv-python-headless>=4.9
+numpy>=1.26
+
+# Background removal. Heavy (~200MB with the ONNX runtime and the u2net
+# weights, downloaded once on first use). Leave it out and the service still
+# crops correctly — it just keeps the wall behind the customer.
+rembg[cpu]>=2.0.57
+onnxruntime>=1.17

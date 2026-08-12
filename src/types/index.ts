@@ -19,7 +19,22 @@ export interface Session {
 
 // ─────────────────────────── Payments ───────────────────────────
 
-export type PayType = 'Данс' | 'Бэлэн' | 'Карт' | 'Бусад' | '';
+export type PayType = 'Данс' | 'Бэлэн' | 'Карт' | 'Холимог' | 'Бусад' | '';
+
+/**
+ * One job settled with more than one method — 2,000₮ cash and 3,000₮ by card.
+ *
+ * Stored as amounts rather than shares so the daily report can put each slice
+ * in the column it belongs to without re-deriving anything. Absent on every
+ * job that was paid one way, which is nearly all of them.
+ */
+export interface PaySplit {
+  cash: number;
+  card: number;
+  transfer: number;
+}
+
+export type PayMethodKey = keyof PaySplit;
 
 /** The three states the work-log form offers. */
 export type PaymentStatus = 'Төлөгдөөгүй' | 'Урьдчилгаа' | 'Төлөгдсөн' | '';
@@ -87,6 +102,8 @@ export interface WorkLog {
   unitPrice: string;
   quantity: number | string;
   payType: PayType;
+  /** Only meaningful when `payType` is «Холимог». */
+  paySplit?: PaySplit;
   isDelivery: boolean;
   isTomorrow: boolean;
   /** `YYYY-MM-DD` chosen when «Маргааш» is set to a specific day, not just "tomorrow". */

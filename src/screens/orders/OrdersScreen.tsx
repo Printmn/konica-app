@@ -1,8 +1,8 @@
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
-import { Button, FAB, Modal, Portal, SegmentedButtons, TextInput } from 'react-native-paper';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Button, FAB, Icon, Modal, Portal, SegmentedButtons, TextInput } from 'react-native-paper';
 
 import { useAuth } from '@/authentication/AuthContext';
 import {
@@ -13,7 +13,6 @@ import {
 import { Screen } from '@/components/layout/Screen';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { useData } from '@/features/data/DataContext';
-import { buildQuickOrder } from '@/features/orders/orderLogic';
 import {
   applyWorkLogEdit,
   archiveDates,
@@ -34,20 +33,21 @@ import { notifyNewOrder } from '@/services/notifications/notificationService';
 import { notifyNewWorkLog } from '@/services/telegram/telegramService';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { DocType, WorkLog, WorkLogForm as FormShape, WorkStatus } from '@/types';
-import { todayString } from '@/utils/date';
+import { DAY_LABELS_MN, todayString, weekdayOf } from '@/utils/date';
 import { rawTotal } from '@/features/reports/reportCalculator';
 import { formatCurrency } from '@/utils/price';
 
 import { CalculatorTab } from './components/CalculatorTab';
-import { CatalogTab, type QuickOrderDraft } from './components/CatalogTab';
 import { WorkLogCard } from './components/WorkLogCard';
 import { WorkLogForm } from './components/WorkLogForm';
 
 /**
  * Orders — the app's main working screen.
  *
- * Three tabs, mirroring the web build's `orderTab` switch: the day's work board,
- * the catalog for quick orders, and the square-metre calculator.
+ * Two tabs: the day's work board, and the arithmetic that surrounds it — the
+ * square-metre calculator, the day's report and the archive. Booking straight
+ * from the catalog used to be a third tab here; it is the Түргэн хэвлэл tab
+ * now, and keeping both meant two doors onto the same room.
  *
  * The form draft lives in this screen's state rather than inside the form
  * component, because the original had a real bug here — the 30-second Firebase
@@ -57,7 +57,7 @@ import { WorkLogForm } from './components/WorkLogForm';
  */
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type Tab = 'worklogs' | 'catalog' | 'calculator';
+type Tab = 'worklogs' | 'calculator';
 
 /** How long a submit stays locked after a successful save. */
 const SUBMIT_LOCK_MS = 1200;
@@ -73,7 +73,6 @@ export function OrdersScreen(): React.JSX.Element {
   const {
     workLogs,
     setWorkLogs,
-    setOrders,
     services,
     inventory,
     calcTypes,
@@ -102,12 +101,46 @@ export function OrdersScreen(): React.JSX.Element {
 
   const { armedId, confirm } = useConfirmAction();
 
+  /**
+   * Opening the tab opens the form.
+   *
+   * Booking a job is what this tab is for — the board was one tap away from
+   * every new order, and that tap was being paid dozens of times a day. The
+   * form now opens on focus; closing it reveals the board underneath, and the
+   * board stays put until the tab is left and come back to.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setTab('worklogs');
+      setEditingId(null);
+      setForm(emptyWorkLogForm());
+      setShowForm(true);
+    }, []),
+  );
+
   const today = todayString();
   const logs = useMemo(
     () => visibleWorkLogs(workLogs, archiveDate, today),
     [workLogs, archiveDate, today],
   );
   const dates = useMemo(() => archiveDates(workLogs), [workLogs]);
+
+  /**
+   * How many jobs each archived day holds.
+   *
+   * The picker used to be a column of bare dates in text buttons, and picking
+   * the right one meant guessing from the digits alone — on a tablet held in
+   * one hand, with rows barely taller than the text. The count is what makes a
+   * day recognisable.
+   */
+  const archiveCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const log of workLogs) {
+      if (!log.date) continue;
+      counts[log.date] = (counts[log.date] ?? 0) + 1;
+    }
+    return counts;
+  }, [workLogs]);
   const dayTotal = useMemo(() => rawTotal(logs), [logs]);
 
   const canEdit = can('editWorkLogs');
@@ -195,42 +228,27 @@ export function OrdersScreen(): React.JSX.Element {
 
   const handleCreateDocument = useCallback(
     (log: WorkLog, docType: DocType) => {
-      navigation.navigate('Quotation', {
-        docType,
-        prefill: {
-          customer: log.customer || '',
-          vatIncluded: Boolean(log.hasVat),
+      navigation.navigate('Main', {
+        screen: 'Quotation',
+        params: {
           docType,
-          items: [
-            {
-              name: log.job || '',
-              qty: Number(log.quantity) || 1,
-              // The unit price, not the line total — see `unitPriceOf`.
-              unitPrice: String(unitPriceOf(log)),
-            },
-          ],
+          prefill: {
+            customer: log.customer || '',
+            vatIncluded: Boolean(log.hasVat),
+            docType,
+            items: [
+              {
+                name: log.job || '',
+                qty: Number(log.quantity) || 1,
+                // The unit price, not the line total — see `unitPriceOf`.
+                unitPrice: String(unitPriceOf(log)),
+              },
+            ],
+          },
         },
       });
     },
     [navigation],
-  );
-
-  const handleQuickOrder = useCallback(
-    (draft: QuickOrderDraft) => {
-      if (submitting.current) return;
-      submitting.current = true;
-      setTimeout(() => {
-        submitting.current = false;
-      }, SUBMIT_LOCK_MS);
-
-      const { order, workLog } = buildQuickOrder(draft, workLogs);
-      setOrders((previous) => [order, ...previous]);
-      setWorkLogs((previous) => [workLog, ...previous]);
-      void notifyNewOrder(workLog);
-      show(`${workLog.job} — ${formatCurrency(order.price)}`, 'success');
-      setTab('worklogs');
-    },
-    [workLogs, setOrders, setWorkLogs, show],
   );
 
   const handleCalculatorRegister = useCallback((job: string, price: number) => {
@@ -277,6 +295,19 @@ export function OrdersScreen(): React.JSX.Element {
         title="Захиалга"
         onBack={onBack}
         subtitle={archiveDate ? `Архив · ${archiveDate}` : `Өнөөдөр · ${today}`}
+        // Orders is where the app opens now, so the way into Settings has to
+        // live here — it used to hang off the Нүүр screen, which is no longer
+        // in the bar.
+        right={
+          <Pressable
+            onPress={() => navigation.navigate('Settings')}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Тохиргоо"
+          >
+            <Icon source="cog-outline" size={22} color="#ffffff" />
+          </Pressable>
+        }
       />
 
       {isOffline ? <OfflineBanner pendingWrites={pendingWrites} /> : null}
@@ -291,7 +322,6 @@ export function OrdersScreen(): React.JSX.Element {
           density="small"
           buttons={[
             { value: 'worklogs', label: 'Ажлын бүртгэл', icon: 'clipboard-text' },
-            { value: 'catalog', label: 'Үйлчилгээ', icon: 'view-grid' },
             { value: 'calculator', label: 'Тооцоолол', icon: 'calculator' },
           ]}
         />
@@ -317,27 +347,10 @@ export function OrdersScreen(): React.JSX.Element {
                     {logs.length} ажил · {formatCurrency(dayTotal)}
                   </Text>
                   <View style={styles.headerActions}>
-                    {/* The day's takings are the question that follows "what
-                        did we book today", so the report sits with the other
-                        two rather than a tab away on the home grid. */}
-                    {can('viewReport') ? (
-                      <Button
-                        mode="text"
-                        compact
-                        icon="chart-box-outline"
-                        onPress={() => navigation.navigate('Main', { screen: 'Report' })}
-                      >
-                        Тайлан
-                      </Button>
-                    ) : null}
-                    <Button
-                      mode="text"
-                      compact
-                      icon="calendar"
-                      onPress={() => setArchiveOpen(true)}
-                    >
-                      Архив
-                    </Button>
+                    {/* Only the export stays on the board: it sends whatever is
+                        on screen. Looking a day up and reading the takings are
+                        both questions asked *after* the work, so they moved to
+                        the Тооцоолол tab with the rest of the arithmetic. */}
                     {can('exportData') && logs.length > 0 ? (
                       <Button
                         mode="text"
@@ -402,14 +415,19 @@ export function OrdersScreen(): React.JSX.Element {
               />
             )}
           />
-        ) : tab === 'catalog' ? (
-          <CatalogTab services={services} onConfirm={handleQuickOrder} />
         ) : (
           <CalculatorTab
             calcTypes={calcTypes}
             canEdit={can('editCatalog')}
             onSaveTypes={setCalcTypes}
             onRegister={handleCalculatorRegister}
+            onOpenReport={
+              can('viewReport')
+                ? () => navigation.navigate('Main', { screen: 'Report' })
+                : undefined
+            }
+            onOpenArchive={() => setArchiveOpen(true)}
+            archiveDate={archiveDate}
           />
         )}
       </View>
@@ -475,18 +493,57 @@ export function OrdersScreen(): React.JSX.Element {
             data={dates}
             keyExtractor={(item) => item}
             style={styles.archiveList}
-            renderItem={({ item }) => (
-              <Button
-                mode={archiveDate === item ? 'contained' : 'text'}
-                onPress={() => {
-                  setArchiveDate(item === today ? null : item);
-                  setArchiveOpen(false);
-                }}
-              >
-                {item}
-                {item === today ? ' (өнөөдөр)' : ''}
-              </Button>
-            )}
+            ItemSeparatorComponent={() => <View style={styles.archiveGap} />}
+            renderItem={({ item }) => {
+              const active = archiveDate === item;
+              const count = archiveCounts[item] ?? 0;
+              return (
+                <Pressable
+                  onPress={() => {
+                    setArchiveDate(item === today ? null : item);
+                    setArchiveOpen(false);
+                    // The picker is opened from the Тооцоолол tab, but what it
+                    // changes is the board — so go and show it.
+                    setTab('worklogs');
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`${item}, ${count} захиалга`}
+                  style={[
+                    styles.archiveRow,
+                    {
+                      backgroundColor: active ? theme.colors.primary : theme.colors.surfaceVariant,
+                      borderColor: active ? theme.colors.primary : theme.custom.subtleBorder,
+                    },
+                  ]}
+                >
+                  <View style={styles.flex}>
+                    <Text
+                      style={[
+                        styles.archiveDate,
+                        { color: active ? theme.colors.onPrimary : theme.colors.onSurface },
+                      ]}
+                    >
+                      {item}
+                      {item === today ? ' · өнөөдөр' : ''}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.archiveMeta,
+                        {
+                          color: active ? theme.colors.onPrimary : theme.custom.mutedText,
+                        },
+                      ]}
+                    >
+                      {DAY_LABELS_MN[weekdayOf(item)] ?? ''} гараг · {count} захиалга
+                    </Text>
+                  </View>
+                  {active ? (
+                    <Text style={[styles.archiveTick, { color: theme.colors.onPrimary }]}>✓</Text>
+                  ) : null}
+                </Pressable>
+              );
+            }}
             ListEmptyComponent={
               <Text style={[styles.empty, { color: theme.custom.mutedText }]}>
                 Архив хоосон байна
@@ -528,6 +585,22 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   editingBanner: { fontSize: 12, fontWeight: '800', paddingVertical: 4 },
   modalTitle: { fontSize: 15, fontWeight: '800' },
-  archiveList: { maxHeight: 360 },
+  /**
+   * Deliberately tall rows. Archive days are picked rarely and usually with a
+   * thumb, so the target is sized for that rather than for density.
+   */
+  archiveList: { maxHeight: 420 },
+  archiveGap: { height: 8 },
+  archiveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  archiveDate: { fontSize: 16, fontWeight: '800' },
+  archiveMeta: { fontSize: 12, marginTop: 2 },
+  archiveTick: { fontSize: 18, fontWeight: '900' },
   empty: { textAlign: 'center', paddingVertical: 24, fontSize: 12 },
 });

@@ -13,6 +13,7 @@ import { HomeScreen } from '@/screens/home/HomeScreen';
 import { InventoryScreen } from '@/screens/inventory/InventoryScreen';
 import { OrdersScreen } from '@/screens/orders/OrdersScreen';
 import { PerformanceScreen } from '@/screens/performance/PerformanceScreen';
+import { QuotationScreen } from '@/screens/quotation/QuotationScreen';
 import { QuickPrintScreen } from '@/screens/quickprint/QuickPrintScreen';
 import { ReportScreen } from '@/screens/report/ReportScreen';
 import { ServicesScreen } from '@/screens/services/ServicesScreen';
@@ -35,6 +36,7 @@ const SCREENS: Record<keyof MainTabParamList, React.ComponentType> = {
   Orders: OrdersScreen,
   Daily: DailyScreen,
   QuickPrint: QuickPrintScreen,
+  Quotation: QuotationScreen,
   Inventory: InventoryScreen,
   Services: ServicesScreen,
   Report: ReportScreen,
@@ -75,6 +77,16 @@ export function MainTabs(): React.JSX.Element {
     [role],
   );
 
+  /**
+   * Six destinations share a phone's width, so past four the icons and labels
+   * step down a size and the per-item padding narrows. Without this the labels
+   * are wider than their slots and Android clips them to nothing rather than
+   * shrinking them.
+   */
+  const crowded = tabs.length > 4 && !isTablet;
+  const iconSize = crowded ? 22 : 26;
+  const iconSizeActive = crowded ? 25 : 30;
+
   // Reachable by shortcut or sidebar, but not shown in the bar.
   const hidden = useMemo(() => (role ? hiddenTabsForRole(role) : []), [role]);
 
@@ -108,7 +120,7 @@ export function MainTabs(): React.JSX.Element {
           shadowOffset: { width: 0, height: -4 },
           elevation: 12,
         },
-        tabBarItemStyle: styles.tabItem,
+        tabBarItemStyle: crowded ? styles.tabItemTight : styles.tabItem,
         tabBarIconStyle: styles.tabIcon,
         // Tabs are cheap to keep alive and the shop switches between them
         // constantly; unmounting would drop scroll position and form drafts.
@@ -125,7 +137,7 @@ export function MainTabs(): React.JSX.Element {
             // Every tab renders identically; the selected one is a touch
             // larger and green so it reads without a colour legend.
             tabBarIcon: ({ color, focused }) => (
-              <Icon source={tab.icon} size={focused ? 30 : 26} color={color} />
+              <Icon source={tab.icon} size={focused ? iconSizeActive : iconSize} color={color} />
             ),
             // Unread messages are the one thing worth interrupting another
             // screen for, so the count rides on the Chat tab.
@@ -134,8 +146,16 @@ export function MainTabs(): React.JSX.Element {
               : {}),
             tabBarLabel: ({ color, focused }) => (
               <Text
-                style={[styles.tabLabel, focused && styles.tabLabelActive, { color }]}
+                style={[
+                  crowded ? styles.tabLabelTight : styles.tabLabel,
+                  focused && (crowded ? styles.tabLabelTightActive : styles.tabLabelActive),
+                  { color },
+                ]}
                 numberOfLines={1}
+                // Android measures the slot before the text and clips; letting
+                // it shrink a touch keeps a long word readable instead.
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
               >
                 {tab.label}
               </Text>
@@ -164,7 +184,10 @@ const styles = StyleSheet.create({
   // Each item owns its full share of the row, so the tap area is the whole
   // column rather than just the glyph.
   tabItem: { paddingVertical: 4, borderRadius: 16 },
+  tabItemTight: { paddingVertical: 2, paddingHorizontal: 0, borderRadius: 12 },
   tabIcon: { marginTop: 2 },
   tabLabel: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+  tabLabelTight: { fontSize: 9, fontWeight: '600', marginTop: 1 },
+  tabLabelTightActive: { fontSize: 10, fontWeight: '800', marginTop: 1 },
   tabLabelActive: { fontSize: 12, fontWeight: '800', marginTop: 2 },
 });

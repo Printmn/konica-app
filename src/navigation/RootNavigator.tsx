@@ -13,7 +13,6 @@ import { AdminScreen } from '@/screens/admin/AdminScreen';
 import { LoginScreen } from '@/screens/auth/LoginScreen';
 import { PinSetupScreen } from '@/screens/auth/PinSetupScreen';
 import { ImageViewerScreen } from '@/screens/home/ImageViewerScreen';
-import { QuotationScreen } from '@/screens/quotation/QuotationScreen';
 import { SettingsScreen } from '@/screens/admin/SettingsScreen';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import { useThemeMode } from '@/theme/ThemeProvider';
@@ -62,11 +61,6 @@ export function RootNavigator(): React.JSX.Element {
         ) : (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
-            <Stack.Screen
-              name="Quotation"
-              component={QuotationScreen}
-              options={{ animation: 'slide_from_right' }}
-            />
             <Stack.Screen
               name="Admin"
               component={AdminScreen}

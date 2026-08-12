@@ -9,11 +9,15 @@ import { nextId } from '@/utils/id';
 import { calculateAreaPrice, formatCurrency, formatNumber } from '@/utils/price';
 
 /**
- * Square-metre price calculator.
+ * Square-metre pricing, and the two questions asked alongside it.
  *
  * `area = width × height`, `price = round(area × base)` — identical to the web
  * build. Managers can edit the per-material base rates inline; those rates sync
  * to Firebase like any other collection.
+ *
+ * The day's report and the archive sit at the top. They used to be buttons over
+ * the work board, where they competed with booking a job; here they are with
+ * the rest of the arithmetic, which is what someone reaching for them is doing.
  */
 
 interface CalculatorTabProps {
@@ -21,6 +25,11 @@ interface CalculatorTabProps {
   canEdit: boolean;
   onSaveTypes: (next: CalcType[]) => void;
   onRegister: (job: string, price: number) => void;
+  /** Omitted for roles that may not read the takings. */
+  onOpenReport?: (() => void) | undefined;
+  onOpenArchive: () => void;
+  /** The day being viewed, or `null` for today. */
+  archiveDate: string | null;
 }
 
 function CalculatorTabBase({
@@ -28,6 +37,9 @@ function CalculatorTabBase({
   canEdit,
   onSaveTypes,
   onRegister,
+  onOpenReport,
+  onOpenArchive,
+  archiveDate,
 }: CalculatorTabProps): React.JSX.Element {
   const theme = useAppTheme();
 
@@ -63,6 +75,29 @@ function CalculatorTabBase({
 
   return (
     <ScrollView contentContainerStyle={styles.root} keyboardShouldPersistTaps="handled">
+      <View style={styles.toolRow}>
+        {onOpenReport ? (
+          <Button
+            mode="contained-tonal"
+            icon="chart-box-outline"
+            compact
+            onPress={onOpenReport}
+            style={styles.flex}
+          >
+            Тайлан
+          </Button>
+        ) : null}
+        <Button
+          mode={archiveDate ? 'contained' : 'outlined'}
+          icon="calendar"
+          compact
+          onPress={onOpenArchive}
+          style={styles.flex}
+        >
+          {archiveDate ? archiveDate : 'Архив'}
+        </Button>
+      </View>
+
       <View style={styles.headerRow}>
         <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
           Материал сонгох
@@ -221,6 +256,7 @@ function CalculatorTabBase({
 
 const styles = StyleSheet.create({
   root: { gap: 12, paddingBottom: 24 },
+  toolRow: { flexDirection: 'row', gap: 8 },
   flex: { flex: 1 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 13, fontWeight: '800' },

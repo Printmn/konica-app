@@ -15,10 +15,17 @@ import {
   imageForJob,
   productImageMap,
 } from '@/features/worklogs/workLogLogic';
+import {
+  PAY_METHODS,
+  emptyPaySplit,
+  splitRemainder,
+  splitTotal,
+} from '@/features/worklogs/paySplit';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type {
   InventoryItem,
+  PayMethodKey,
   PayType,
   PaymentStatus,
   ServiceItem,
@@ -35,14 +42,20 @@ import {
   weekdayOf,
 } from '@/utils/date';
 
-import { SquareMeterModal } from './SquareMeterModal';
 
 /**
  * New-job form.
  *
- * Laid out as ten numbered steps so a counter clerk can work down the screen
- * without hunting for fields. Every choice is a full-width tap target rather
- * than a dropdown — the shop fills this in on a shared iPad, often one-handed.
+ * Eight numbered steps in the order the counter actually works: who it is for,
+ * what it is, how many and how much, when it is due, how they pay, and last
+ * the details. It was ten, and the two that went were doing nothing — a total
+ * the clerk had just typed, restated in a coloured bar, and a square-metre
+ * calculator that duplicates the Тооцоолол tab.
+ *
+ * Choices are full-width tap targets rather than dropdowns wherever there are
+ * two or three of them — the shop fills this in on a shared iPad, often
+ * one-handed. The customer type is the exception: it is answered once per job
+ * and buying a whole row for it pushed everything else down.
  *
  * The quantity/unit-price/total coupling is still delegated to `workLogLogic`;
  * this component only renders. Total must always equal `unitPrice × quantity`,
@@ -75,9 +88,14 @@ const PAYMENT_STATUSES: Choice[] = [
   { value: 'Төлөгдсөн', label: 'Бүрэн төлсөн' },
 ];
 
+/**
+ * «НӨАТ-гүй» leads, because that is what most jobs are — and it is the option
+ * a blank form already sits on, so the highlighted button now agrees with the
+ * left-to-right reading order instead of contradicting it.
+ */
 const VAT_CHOICES: Choice[] = [
-  { value: 'yes', label: 'НӨАТ-тэй' },
   { value: 'no', label: 'НӨАТ-гүй' },
+  { value: 'yes', label: 'НӨАТ-тэй' },
 ];
 
 /** Common drop-off times in the shop's day. */
@@ -145,10 +163,12 @@ function WorkLogFormBase({
 }: WorkLogFormProps): React.JSX.Element {
   const theme = useAppTheme();
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [areaVisible, setAreaVisible] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
+  const [customerTypeOpen, setCustomerTypeOpen] = useState(false);
+  const [dealOpen, setDealOpen] = useState(false);
+  const [dealDraft, setDealDraft] = useState('');
   const [tomorrowPickerVisible, setTomorrowPickerVisible] = useState(false);
   const [tomorrowMonth, setTomorrowMonth] = useState(() => todayString().slice(0, 7));
 
@@ -204,12 +224,89 @@ function WorkLogFormBase({
   const grandTotal = form.hasVat ? total + vatAmount : total;
   const quantity = Number(form.quantity) || 1;
 
+  /** What a mixed payment still leaves outstanding; 0 once it reconciles. */
+  const splitLeft = splitRemainder(form);
+  const splitValue = (key: PayMethodKey): string => {
+    const amount = form.paySplit?.[key] ?? 0;
+    return amount === 0 ? '' : String(amount);
+  };
+
   // Recomputed when the form opens rather than on every keystroke; a shortcut
   // drifting by a minute while the clerk types would be worse than useless.
   const deadlinePresets = useMemo(() => deadlinesFromNow(), []);
 
   const step = (delta: number): void =>
     onChange(applyQuantity(form, String(Math.max(1, quantity + delta))));
+
+  const customerTypeLabel =
+    CUSTOMER_TYPES.find((option) => option.value === form.customerType)?.label ??
+    'Харилцагчийн төрөл сонгох';
+
+  /**
+   * Choosing «Байгууллага» turns VAT on.
+   *
+   * Companies need a VAT receipt and individuals almost never ask for one, so
+   * the clerk was setting the same two fields together every time — and
+   * forgetting the second one is an invoice the customer cannot claim back.
+   * It stays a switch, so an unusual job can still be changed by hand.
+   */
+  const chooseCustomerType = (value: string): void => {
+    onChange({
+      ...form,
+      customerType: value,
+      hasVat: value === 'Байгууллага' ? true : form.hasVat,
+    });
+    setCustomerTypeOpen(false);
+  };
+
+  /**
+   * An unpaid job is one still awaiting settlement, so it lands on the board
+   * under «Тооцоо» without anyone setting it twice — and marking it paid takes
+   * that flag off again. Any other status the clerk chose is left alone; only
+   * the settlement flag is ours to manage.
+   */
+  const choosePaymentStatus = (value: PaymentStatus): void => {
+    const unpaid = value === 'Төлөгдөөгүй';
+    const settling = form.status === 'Тооцоотой' || form.status === 'Болоогүй';
+    onChange({
+      ...form,
+      paymentStatus: value,
+      status: unpaid ? 'Тооцоотой' : settling ? '' : form.status,
+    });
+  };
+
+  /**
+   * Payment method, including the mixed case.
+   *
+   * «Холимог» is the one option that carries data of its own, so it seeds an
+   * empty split on the way in and drops it on the way out — leaving a stale
+   * split behind would keep crediting the day's cash column for a job that is
+   * now plainly on a card.
+   */
+  const choosePayType = (value: string): void => {
+    const next = (form.payType === value ? '' : value) as PayType;
+    onChange({
+      ...form,
+      payType: next,
+      paySplit: next === 'Холимог' ? (form.paySplit ?? emptyPaySplit()) : undefined,
+    });
+  };
+
+  /** Writes one slice of a mixed payment, in whole tögrög. */
+  const setSplit = (key: PayMethodKey, digits: string): void => {
+    const split = form.paySplit ?? emptyPaySplit();
+    onChange({
+      ...form,
+      paySplit: { ...split, [key]: Number(digits.replace(/[^0-9]/g, '')) || 0 },
+    });
+  };
+
+  /** Applies a negotiated unit price to the job as it stands. */
+  const applyDeal = (): void => {
+    const agreed = dealDraft.replace(/[^0-9]/g, '');
+    if (agreed !== '') onChange(applyUnitPrice({ ...form, agreedPrice: agreed }, agreed));
+    setDealOpen(false);
+  };
 
   /** A row of equal-width choice buttons. */
   const renderChoices = (
@@ -265,12 +362,107 @@ function WorkLogFormBase({
 
   return (
     <View style={styles.root}>
-      {/* 1 ─ who the job is for */}
+      {/* 1 ─ who the job is for, and how to reach them */}
       <View style={cardStyle}>
         {stepLabel('1. Харилцагч')}
-        {renderChoices(CUSTOMER_TYPES, form.customerType, (value) =>
-          set('customerType', form.customerType === value ? '' : value),
-        )}
+        <View>
+          <Pressable
+            onPress={() => setCustomerTypeOpen((open) => !open)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: customerTypeOpen }}
+            accessibilityLabel={`Харилцагчийн төрөл: ${customerTypeLabel}`}
+            style={[
+              styles.dropdown,
+              {
+                backgroundColor: theme.custom.cardBackground,
+                borderColor: theme.custom.subtleBorder,
+              },
+            ]}
+          >
+            <Text
+              style={[styles.dropdownText, { color: theme.colors.onSurface }]}
+              numberOfLines={1}
+            >
+              {customerTypeLabel}
+            </Text>
+            <Text style={[styles.dropdownChevron, { color: theme.custom.mutedText }]}>
+              {customerTypeOpen ? '▴' : '▾'}
+            </Text>
+          </Pressable>
+
+        </View>
+
+        {/* Opens underneath the field it belongs to. A centred sheet for two
+            options covered the form to ask a question the clerk answers
+            without looking. */}
+        {customerTypeOpen ? (
+          <View
+            style={[
+              styles.optionList,
+              {
+                backgroundColor: theme.colors.surfaceVariant,
+                borderColor: theme.custom.subtleBorder,
+              },
+            ]}
+          >
+            {CUSTOMER_TYPES.map((option, index) => {
+              const active = form.customerType === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => chooseCustomerType(active ? '' : option.value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={[
+                    styles.optionRow,
+                    index > 0 && {
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                      borderTopColor: theme.custom.subtleBorder,
+                    },
+                    active && { backgroundColor: theme.colors.primary },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.optionRowText,
+                      { color: active ? theme.colors.onPrimary : theme.colors.onSurface },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {active ? (
+                    <Text style={[styles.optionTick, { color: theme.colors.onPrimary }]}>✓</Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+        {customerTypeOpen ? (
+          <Text style={[styles.sheetHint, { color: theme.custom.mutedText }]}>
+            Байгууллага сонгоход НӨАТ өөрөө асна.
+          </Text>
+        ) : null}
+
+        <View style={[styles.deadlineRow, styles.spaced]}>
+          <TextInput
+            mode="outlined"
+            placeholder="Захиалагчийн нэр"
+            value={form.customer}
+            onChangeText={(value) => set('customer', value)}
+            style={styles.flex}
+            dense
+          />
+          <TextInput
+            mode="outlined"
+            placeholder="99112233"
+            value={form.phone}
+            onChangeText={(value) => set('phone', value)}
+            keyboardType="phone-pad"
+            style={styles.flex}
+            dense
+          />
+        </View>
       </View>
 
       {/* 2 ─ what is being made */}
@@ -290,8 +482,13 @@ function WorkLogFormBase({
               📦 Бүтээгдэхүүн сонгох
             </Text>
           </Pressable>
+          {/* Was «📐 МКВ», which duplicated the Тооцоолол tab. What the counter
+              actually does here is agree a price off the list one. */}
           <Pressable
-            onPress={() => setAreaVisible(true)}
+            onPress={() => {
+              setDealDraft(form.unitPrice);
+              setDealOpen(true);
+            }}
             accessibilityRole="button"
             style={[
               styles.choice,
@@ -299,7 +496,9 @@ function WorkLogFormBase({
               { borderColor: theme.colors.primary, backgroundColor: theme.custom.cardBackground },
             ]}
           >
-            <Text style={[styles.choiceText, { color: theme.colors.primary }]}>📐 МКВ</Text>
+            <Text style={[styles.choiceText, { color: theme.colors.primary }]}>
+              🤝 Тохиролцоо
+            </Text>
           </Pressable>
         </View>
         <TextInput
@@ -376,7 +575,7 @@ function WorkLogFormBase({
           </View>
 
           <View style={styles.flex}>
-            {stepLabel('4. Нэгж үнэ (₮)')}
+            {stepLabel('Нэгж үнэ (₮)')}
             <TextInput
               mode="outlined"
               placeholder="0"
@@ -389,50 +588,17 @@ function WorkLogFormBase({
         </View>
       </View>
 
-      {/* 5 ─ how they are paying */}
+      {/* 4 ─ VAT, right where the price it changes was just typed */}
       <View style={cardStyle}>
-        {stepLabel('5. Төлбөрийн хэлбэр')}
-        {renderChoices(PAY_TYPES, form.payType, (value) =>
-          set('payType', (form.payType === value ? '' : value) as PayType),
-        )}
-      </View>
-
-      {/* 6 ─ the number that matters */}
-      <View
-        style={[
-          styles.totalBar,
-          {
-            backgroundColor: theme.colors.primaryContainer,
-            borderColor: theme.colors.primary,
-          },
-        ]}
-      >
-        <Text style={[styles.totalLabel, { color: theme.colors.onPrimaryContainer }]}>
-          6. Нийт үнэ{form.hasVat ? ' (НӨАТ орсон)' : ''}
-        </Text>
-        <Text style={[styles.totalValue, { color: theme.colors.onPrimaryContainer }]}>
-          {formatCurrency(grandTotal)}
-        </Text>
-      </View>
-
-      {/* 7 ─ paid or not */}
-      <View style={cardStyle}>
-        {stepLabel('7. Төлбөрийн төлөв')}
-        {renderChoices(PAYMENT_STATUSES, form.paymentStatus, (value) =>
-          set('paymentStatus', value as PaymentStatus),
-        )}
-      </View>
-
-      {/* 8 ─ VAT, with the arithmetic spelled out */}
-      <View style={cardStyle}>
-        {stepLabel('8. НӨАТ')}
+        {stepLabel('4. НӨАТ')}
         {renderChoices(VAT_CHOICES, form.hasVat ? 'yes' : 'no', (value) =>
           set('hasVat', value === 'yes'),
         )}
 
-        {/* Customers ask "how much is the VAT?" at the counter, and the clerk
-            should not have to work it out. Shown for both answers so the
-            difference between them is visible before choosing. */}
+        {/* The total is always here — taking it away with VAT left a job with
+            no visible amount anywhere on the form. The two VAT lines above it
+            appear only when VAT is actually charged, so a plain job is one
+            line rather than three. */}
         {total > 0 ? (
           <View
             style={[
@@ -443,31 +609,35 @@ function WorkLogFormBase({
               },
             ]}
           >
-            <View style={styles.breakdownRow}>
-              <Text style={[styles.breakdownLabel, { color: theme.custom.mutedText }]}>
-                Үнэ ({quantity} × {formatCurrency(Number(form.unitPrice) || 0)})
-              </Text>
-              <Text style={[styles.breakdownValue, { color: theme.colors.onSurface }]}>
-                {formatCurrency(total)}
-              </Text>
-            </View>
+            {form.hasVat ? (
+              <>
+                <View style={styles.breakdownRow}>
+                  <Text style={[styles.breakdownLabel, { color: theme.custom.mutedText }]}>
+                    Үнэ ({quantity} × {formatCurrency(Number(form.unitPrice) || 0)})
+                  </Text>
+                  <Text style={[styles.breakdownValue, { color: theme.colors.onSurface }]}>
+                    {formatCurrency(total)}
+                  </Text>
+                </View>
 
-            <View style={styles.breakdownRow}>
-              <Text style={[styles.breakdownLabel, { color: theme.custom.mutedText }]}>
-                НӨАТ (10%)
-              </Text>
-              <Text
-                style={[
-                  styles.breakdownValue,
-                  { color: form.hasVat ? theme.colors.onSurface : theme.custom.mutedText },
-                ]}
-              >
-                {form.hasVat ? `+${formatCurrency(vatAmount)}` : '—'}
-              </Text>
-            </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={[styles.breakdownLabel, { color: theme.custom.mutedText }]}>
+                    НӨАТ (10%)
+                  </Text>
+                  <Text style={[styles.breakdownValue, { color: theme.colors.onSurface }]}>
+                    +{formatCurrency(vatAmount)}
+                  </Text>
+                </View>
+              </>
+            ) : null}
 
             <View
-              style={[styles.breakdownTotal, { borderTopColor: theme.custom.subtleBorder }]}
+              style={[
+                styles.breakdownTotal,
+                form.hasVat
+                  ? { borderTopColor: theme.custom.subtleBorder }
+                  : styles.breakdownTotalAlone,
+              ]}
             >
               <Text style={[styles.breakdownTotalLabel, { color: theme.colors.onSurface }]}>
                 Нийт төлөх
@@ -480,11 +650,11 @@ function WorkLogFormBase({
         ) : null}
       </View>
 
-      {/* 9 ─ timing */}
+      {/* 5 ─ when it came in and when it is due */}
       <View style={cardStyle}>
         <View style={styles.split}>
           <View style={styles.flex}>
-            {stepLabel('9. Хүлээн авсан цаг')}
+            {stepLabel('5. Хүлээн авсан цаг')}
             <TimeField
               label=""
               value={form.receivedTime}
@@ -539,26 +709,102 @@ function WorkLogFormBase({
         </View>
       </View>
 
-      {/* 10 ─ contact and delivery */}
+      {/* 6 ─ how they are paying, one method or several */}
       <View style={cardStyle}>
-        {stepLabel('10. Утас + Хүргэлт')}
-        <View style={styles.deadlineRow}>
-          <TextInput
-            mode="outlined"
-            placeholder="99112233"
-            value={form.phone}
-            onChangeText={(value) => set('phone', value)}
-            keyboardType="phone-pad"
-            style={styles.flex}
-            dense
-          />
+        {stepLabel('6. Төлбөрийн хэлбэр')}
+        {renderChoices(PAY_TYPES, form.payType, choosePayType)}
+
+        {/* Kept out of the row above rather than squeezed in as a fourth
+            button: four cells on a phone clip their labels, and this one is
+            the rare case. */}
+        <Pressable
+          onPress={() => choosePayType('Холимог')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: form.payType === 'Холимог' }}
+          style={[
+            styles.choice,
+            styles.spaced,
+            {
+              backgroundColor:
+                form.payType === 'Холимог' ? theme.colors.primary : theme.custom.cardBackground,
+              borderColor:
+                form.payType === 'Холимог' ? theme.colors.primary : theme.custom.subtleBorder,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.choiceText,
+              {
+                color:
+                  form.payType === 'Холимог' ? theme.colors.onPrimary : theme.colors.onSurface,
+              },
+            ]}
+          >
+            🔀 Холимог (хуваасан)
+          </Text>
+        </Pressable>
+
+        {form.payType === 'Холимог' ? (
+          <View style={styles.spaced}>
+            {PAY_METHODS.map(({ key, label }) => (
+              <View key={key} style={[styles.splitRow, styles.spaced]}>
+                <Text style={[styles.splitLabel, { color: theme.colors.onSurface }]}>
+                  {label}
+                </Text>
+                <TextInput
+                  mode="outlined"
+                  placeholder="0"
+                  value={splitValue(key)}
+                  onChangeText={(value) => setSplit(key, value)}
+                  keyboardType="number-pad"
+                  style={styles.flex}
+                  accessibilityLabel={`${label} дүн`}
+                  dense
+                />
+              </View>
+            ))}
+
+            {/* The clerk is reconciling a till, so the number that matters is
+                what is still outstanding — not what has been entered. */}
+            <Text
+              style={[
+                styles.sheetHint,
+                styles.spaced,
+                { color: splitLeft === 0 ? theme.colors.primary : theme.colors.error },
+              ]}
+            >
+              {splitLeft === 0
+                ? `Тэнцсэн: ${formatCurrency(splitTotal(form.paySplit))}`
+                : splitLeft > 0
+                  ? `Дутуу: ${formatCurrency(splitLeft)}`
+                  : `Илүү: ${formatCurrency(-splitLeft)}`}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* 7 ─ paid or not */}
+      <View style={cardStyle}>
+        {stepLabel('7. Төлбөрийн төлөв')}
+        {renderChoices(PAYMENT_STATUSES, form.paymentStatus, (value) =>
+          choosePaymentStatus(value as PaymentStatus),
+        )}
+      </View>
+
+      {/* 8 ─ delivery and the details that decide a reprint */}
+      <View style={cardStyle}>
+        {stepLabel('8. Хүргэлт & тайлбар')}
+        <View>
           <Pressable
             onPress={() => set('isDelivery', !form.isDelivery)}
             accessibilityRole="button"
             accessibilityState={{ selected: form.isDelivery }}
             style={[
               styles.tomorrow,
+              styles.flex,
               {
+                alignItems: 'center',
                 backgroundColor: form.isDelivery
                   ? theme.colors.primary
                   : theme.custom.cardBackground,
@@ -576,14 +822,6 @@ function WorkLogFormBase({
             </Text>
           </Pressable>
         </View>
-        <TextInput
-          mode="outlined"
-          placeholder="Захиалагчийн нэр"
-          value={form.customer}
-          onChangeText={(value) => set('customer', value)}
-          style={styles.spaced}
-          dense
-        />
         {/* Notes carry the details that decide a reprint — "хар цаасан дээр",
             "лого зүүн дээд буланд". Two cramped lines meant they were written
             short or not at all. */}
@@ -610,6 +848,42 @@ function WorkLogFormBase({
         </Button>
       </View>
 
+      <Portal>
+        <Modal
+          visible={dealOpen}
+          onDismiss={() => setDealOpen(false)}
+          contentContainerStyle={[
+            styles.sheet,
+            { backgroundColor: theme.custom.cardBackground },
+          ]}
+        >
+          <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
+            Тохиролцсон нэгж үнэ
+          </Text>
+          <Text style={[styles.sheetHint, { color: theme.custom.mutedText }]}>
+            {form.job || 'Сонгосон бүтээгдэхүүн'} · жагсаалтын үнэ{' '}
+            {formatCurrency(Number(form.unitPrice) || 0)}
+          </Text>
+          <TextInput
+            mode="outlined"
+            label="Тохиролцсон үнэ (₮)"
+            value={dealDraft}
+            onChangeText={(value) => setDealDraft(value.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad"
+            autoFocus
+            dense
+          />
+          <View style={styles.actions}>
+            <Button mode="text" onPress={() => setDealOpen(false)} style={styles.flex}>
+              Болих
+            </Button>
+            <Button mode="contained" onPress={applyDeal} style={styles.flex}>
+              Хэрэглэх
+            </Button>
+          </View>
+        </Modal>
+      </Portal>
+
       <ImageLightbox
         uri={zoomed ? jobImage : null}
         title={form.job}
@@ -617,12 +891,6 @@ function WorkLogFormBase({
         onDismiss={() => setZoomed(false)}
       />
 
-      <SquareMeterModal
-        visible={areaVisible}
-        onDismiss={() => setAreaVisible(false)}
-        onApply={(unitPrice) => onChange(applyUnitPrice(form, unitPrice))}
-        initialRate={form.unitPrice}
-      />
 
       <Portal>
         <Modal
@@ -821,6 +1089,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   choiceDashed: { borderStyle: 'dashed' },
+  splitRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  splitLabel: { fontSize: 13, fontWeight: '700', width: 92 },
   choiceText: { fontSize: 13, fontWeight: '700' },
 
   stepper: {
@@ -885,6 +1155,36 @@ const styles = StyleSheet.create({
 
   jobImageWrap: { alignSelf: 'center', marginTop: 10 },
   jobImage: { width: 120, height: 120, borderRadius: 14 },
+
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dropdownText: { fontSize: 14, fontWeight: '700' },
+  dropdownChevron: { fontSize: 16, fontWeight: '800' },
+  /** Stacked rows, the way a dropdown reads — not two chips side by side. */
+  optionList: { marginTop: 6, borderWidth: 1, borderRadius: 12, overflow: 'hidden' },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  optionRowText: { fontSize: 14, fontWeight: '700' },
+  optionTick: { fontSize: 15, fontWeight: '900' },
+
+  sheet: { margin: 20, borderRadius: 20, padding: 16, gap: 10 },
+  sheetRow: { borderRadius: 12, paddingVertical: 14, paddingHorizontal: 16 },
+  sheetRowText: { fontSize: 15, fontWeight: '700' },
+  sheetHint: { fontSize: 11, lineHeight: 16 },
+
+  breakdownTotalAlone: { borderTopWidth: 0, paddingTop: 0 },
 
   modal: { marginHorizontal: 8, marginVertical: 24, borderRadius: 20, padding: 16, gap: 10 },
   modalTitle: { fontSize: 15, fontWeight: '800' },

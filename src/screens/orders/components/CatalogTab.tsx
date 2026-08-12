@@ -24,11 +24,14 @@ import { formatCurrency, parsePrice } from '@/utils/price';
 const PAY_TYPES: PayType[] = ['Данс', 'Бэлэн', 'Карт'];
 
 /**
- * These three cover most of the counter's daily volume, so they always lead
- * the chip row — regardless of how many rows each currently has — with
- * whatever else is in the catalog trailing behind, busiest first.
+ * The only three chips the counter gets.
+ *
+ * The row used to list every category in the catalog, busiest first, which on
+ * a phone ran off the right edge and turned a filter into a search. These three
+ * are the day's real volume; everything else is still reachable through «Бүгд»
+ * and the search box.
  */
-const PRIORITY_CATEGORIES = ['Канон', 'Цээж зураг', 'Хэвлэл'];
+const PRIORITY_CATEGORIES = ['Цээж зураг', 'Канон', 'Хэвлэл'];
 
 export interface QuickOrderDraft {
   description: string;
@@ -47,7 +50,7 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
 
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
-  /** `null` = «Бүгд» — every category shown. */
+  /** `null` until a chip is tapped, when the first category is in force. */
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<ServiceItem | null>(null);
@@ -61,38 +64,43 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
   const [customPrice, setCustomPrice] = useState('');
 
   /**
-   * Category chips — «Канон», «Цээж зураг», «Хэвлэл» гэх мэт.
+   * Everything this screen will ever show.
    *
-   * Хатуу жагсаалт биш, `services`-ээс өөрөө гардаг: хамгийн олон мөртэй
-   * ангилал эхэнд гарч ирнэ, тул дэлгүүр нэмж/устгаж ангилсан ч чип-ийн
-   * жагсаалт дагаад шинэчлэгдэнэ.
+   * The quick screen is the counter's three fast-moving lines — Цээж зураг,
+   * Канон, Хэвлэл. The full catalog stays on Хэвлэлийн үнэ. Narrowing once
+   * here also keeps the search box from turning up rows that have no chip to
+   * sit under.
    */
+  const catalog = useMemo(
+    () => services.filter((service) => PRIORITY_CATEGORIES.includes(service.category || 'Бусад')),
+    [services],
+  );
+
+  /** Only the three, and only those the catalog actually has rows for. */
   const categories = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const service of services) {
-      const category = service.category || 'Бусад';
-      counts.set(category, (counts.get(category) ?? 0) + 1);
-    }
-    const front = PRIORITY_CATEGORIES.filter((name) => counts.has(name));
-    const rest = Array.from(counts.entries())
-      .filter(([name]) => !PRIORITY_CATEGORIES.includes(name))
-      .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name);
-    return [...front, ...rest];
-  }, [services]);
+    const present = new Set<string>();
+    for (const service of catalog) present.add(service.category || 'Бусад');
+    return PRIORITY_CATEGORIES.filter((name) => present.has(name));
+  }, [catalog]);
+
+  /**
+   * With «Бүгд» gone one category is always in force, so an untouched screen
+   * falls back to the first chip rather than showing nothing.
+   */
+  const activeCategory = categoryFilter ?? categories[0] ?? null;
 
   /** Matches the price list: one flat, numbered list, searchable by category. */
   const visible = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
-    return services.filter((service) => {
-      if (categoryFilter && (service.category || 'Бусад') !== categoryFilter) return false;
+    return catalog.filter((service) => {
+      if (activeCategory && (service.category || 'Бусад') !== activeCategory) return false;
       if (!needle) return true;
       return (
         service.name.toLowerCase().includes(needle) ||
         (service.category || '').toLowerCase().includes(needle)
       );
     });
-  }, [services, debouncedSearch, categoryFilter]);
+  }, [catalog, debouncedSearch, activeCategory]);
 
   const isNegotiated = (service: ServiceItem): boolean =>
     (CUSTOM_PRICE_CATEGORIES as readonly string[]).includes(service.category);
@@ -167,63 +175,35 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
               placeholder="Үйлчилгээ, ангиллаар хайх..."
             />
 
-            {categories.length > 1 ? (
-              <FlatList
-                data={categories}
-                keyExtractor={(item) => item}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoryRow}
-                ItemSeparatorComponent={() => <View style={styles.categorySeparator} />}
-                ListHeaderComponent={
-                  <Pressable
-                    onPress={() => setCategoryFilter(null)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: categoryFilter === null }}
-                    style={[
-                      styles.categoryChip,
-                      {
-                        backgroundColor:
-                          categoryFilter === null
-                            ? theme.colors.primary
-                            : theme.custom.cardBackground,
-                        borderColor:
-                          categoryFilter === null ? theme.colors.primary : theme.custom.subtleBorder,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryChipText,
-                        {
-                          color:
-                            categoryFilter === null ? theme.colors.onPrimary : theme.colors.onSurface,
-                        },
-                      ]}
-                    >
-                      Бүгд
-                    </Text>
-                  </Pressable>
-                }
-                renderItem={({ item }) => {
-                  const active = categoryFilter === item;
+            {/* Three buttons, centred, and no «Бүгд». The counter works out of
+                one category at a time; an all-categories view only ever meant
+                scrolling past work this screen does not do. */}
+            {categories.length > 0 ? (
+              <View style={styles.categoryRow}>
+                {categories.map((item) => {
+                  const active = activeCategory === item;
                   return (
                     <Pressable
-                      onPress={() => setCategoryFilter(active ? null : item)}
+                      key={item}
+                      onPress={() => setCategoryFilter(item)}
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
                       style={[
                         styles.categoryChip,
                         {
-                          backgroundColor: active ? theme.colors.primary : theme.custom.cardBackground,
-                          borderColor: active ? theme.colors.primary : theme.custom.subtleBorder,
+                          backgroundColor: active
+                            ? theme.custom.selected
+                            : theme.custom.cardBackground,
+                          borderColor: active
+                            ? theme.custom.selected
+                            : theme.custom.subtleBorder,
                         },
                       ]}
                     >
                       <Text
                         style={[
                           styles.categoryChipText,
-                          { color: active ? theme.colors.onPrimary : theme.colors.onSurface },
+                          { color: active ? theme.custom.onSelected : theme.colors.onSurface },
                         ]}
                         numberOfLines={1}
                       >
@@ -231,38 +211,19 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
                       </Text>
                     </Pressable>
                   );
-                }}
-              />
+                })}
+              </View>
             ) : null}
 
-            <Pressable
-              onPress={() => {
-                setCustomFor('');
-                setCustomDesc('');
-                setCustomPrice('');
-                setQuantity('1');
-                setCustomOpen(true);
-              }}
-              accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.customButton,
-                {
-                  borderColor: theme.colors.primary,
-                  backgroundColor: theme.custom.cardBackground,
-                },
-                pressed && styles.pressed,
-              ]}
-            >
-              <Icon source="cash-plus" size={20} color={theme.colors.primary} />
-              <Text style={[styles.customLabel, { color: theme.colors.primary }]}>
-                Тохиролцоо — дурын үнэ
-              </Text>
-            </Pressable>
-
+            {/* «Тохиролцоо — дурын үнэ» stood here. The same negotiated price
+                is set from the order form, and a second way in from the quick
+                screen only meant two places to look. Rows in
+                `CUSTOM_PRICE_CATEGORIES` still open the free-price sheet when
+                tapped, so nothing is unreachable. */}
             <Text style={[styles.count, { color: theme.custom.mutedText }]}>
-              {debouncedSearch || categoryFilter
+              {debouncedSearch
                 ? `ОЛДСОН ${visible.length} ҮЙЛЧИЛГЭЭ`
-                : `НИЙТ ${visible.length} ҮЙЛЧИЛГЭЭ`}
+                : `${activeCategory ?? ''} · ${visible.length} ҮЙЛЧИЛГЭЭ`}
             </Text>
           </View>
         }
@@ -452,26 +413,26 @@ const styles = StyleSheet.create({
 
   // Deliberately identical to the Хэвлэлийн үнэ rows.
   header: { paddingBottom: 10, gap: 10 },
-  categoryRow: { paddingVertical: 2 },
-  categorySeparator: { width: 8 },
-  categoryChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  categoryChipText: { fontSize: 12, fontWeight: '700' },
-  customButton: {
+  /**
+   * Three chips, so they get the width rather than scrolling. Centred and a
+   * size up from the old row — this is the first thing a hand reaches for on
+   * the quick screen.
+   */
+  categoryRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 4,
   },
-  customLabel: { fontSize: 14, fontWeight: '800' },
+  categoryChip: {
+    flex: 1,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+  },
+  categoryChipText: { fontSize: 14, fontWeight: '800' },
   count: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
 
   serviceRow: {

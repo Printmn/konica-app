@@ -25,23 +25,25 @@ const WORKER_TABS: TabDefinition[] = [
   { name: 'Services', label: 'Хэвлэл үнэ', icon: 'layers' },
 ];
 
-const IPAD_TABS: TabDefinition[] = [
-  { name: 'Home', label: 'Нүүр', icon: 'home-variant' },
-  // «Цаг» таб — Түргэн хэвлэлээр сольсон тул түр коммент.
-  // { name: 'Daily', label: 'Цаг', icon: 'calendar-check' },
-  { name: 'QuickPrint', label: 'Түргэн хэвлэл', icon: 'flash' },
+/**
+ * Every destination the shop uses, in the bar.
+ *
+ * Six is more than a phone bar comfortably holds, so the labels are single
+ * words. «Бараа» and «Хэвлэл» are the two price lists and «Санал» the document
+ * builder — spelled out they were «Барааны үнэ», «Хэвлэлийн үнэ», «Үнийн
+ * санал», which at this width would each clip to something unreadable.
+ */
+const FULL_TABS: TabDefinition[] = [
   { name: 'Orders', label: 'Захиалга', icon: 'clipboard-list' },
+  { name: 'QuickPrint', label: 'Түргэн', icon: 'flash' },
   { name: 'Chat', label: 'Чат', icon: 'message-text' },
+  { name: 'Inventory', label: 'Бараа', icon: 'package-variant' },
+  { name: 'Services', label: 'Хэвлэл', icon: 'layers' },
+  { name: 'Quotation', label: 'Санал', icon: 'file-document-outline' },
 ];
 
-const MANAGER_TABS: TabDefinition[] = [
-  { name: 'Home', label: 'Нүүр', icon: 'home-variant' },
-  // «Цаг» таб — Түргэн хэвлэлээр сольсон тул түр коммент.
-  // { name: 'Daily', label: 'Цаг', icon: 'calendar-check' },
-  { name: 'QuickPrint', label: 'Түргэн хэвлэл', icon: 'flash' },
-  { name: 'Orders', label: 'Захиалга', icon: 'clipboard-list' },
-  { name: 'Report', label: 'Тайлан', icon: 'format-list-bulleted' },
-];
+const IPAD_TABS: TabDefinition[] = FULL_TABS;
+const MANAGER_TABS: TabDefinition[] = FULL_TABS;
 
 export const tabsForRole = (role: Role): TabDefinition[] => {
   switch (role) {
@@ -67,6 +69,7 @@ export const TAB_CAPABILITY: Readonly<Record<keyof MainTabParamList, Capability>
   Orders: 'viewOrders',
   Daily: 'viewAttendance',
   QuickPrint: 'viewOrders',
+  Quotation: 'viewQuotation',
   Inventory: 'viewInventory',
   Services: 'viewServices',
   Report: 'viewReport',
@@ -86,16 +89,9 @@ export const hiddenTabsForRole = (role: Role): (keyof MainTabParamList)[] => {
 };
 
 /** Landing tab after login, matching `doLogin`'s default-view branch. */
-export const initialTabForRole = (role: Role): keyof MainTabParamList => {
-  switch (role) {
-    case 'worker':
-      return 'Inventory';
-    case 'ipad':
-      return 'Orders';
-    default:
-      return 'Home';
-  }
-};
+export const initialTabForRole = (role: Role): keyof MainTabParamList =>
+  // The counter opens the app to book something; anything else is a detour.
+  role === 'worker' ? 'Inventory' : 'Orders';
 
 /**
  * The full destination list for the tablet sidebar — a superset of the tab bar,
