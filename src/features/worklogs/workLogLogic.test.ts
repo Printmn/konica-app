@@ -14,7 +14,10 @@ import {
   applyUnitPrice,
   applyWorkLogEdit,
   createWorkLog,
+  dayLabel,
   deadlineLabel,
+  groupWorkLogsByDate,
+  intakeLabel,
   emptyWorkLogForm,
   imageForJob,
   productImageMap,
@@ -343,6 +346,106 @@ describe('visibleWorkLogs', () => {
  * — then Firebase hands the collection back in its own order and everything
  * reshuffles. Sorting on read is what keeps the two devices agreeing.
  */
+describe('the board is cut into days', () => {
+  it('names today, yesterday and tomorrow rather than dating them', () => {
+    expect(dayLabel('2026-08-04', '2026-08-04')).toBe('ӨНӨӨДӨР');
+    expect(dayLabel('2026-08-03', '2026-08-04')).toBe('ӨЧИГДӨР');
+    expect(dayLabel('2026-08-05', '2026-08-04')).toBe('МАРГААШ');
+  });
+
+  it('dates anything older, in Mongolian', () => {
+    expect(dayLabel('2026-08-01', '2026-08-04')).toBe('8-р сарын 1');
+    expect(dayLabel('2025-12-25', '2026-08-04')).toBe('12-р сарын 25');
+  });
+
+  it('groups a mixed board without reordering it', () => {
+    const board = [
+      log({ id: 3, date: '2026-08-04' }),
+      log({ id: 2, date: '2026-08-04' }),
+      log({ id: 1, date: '2026-08-02' }),
+    ];
+    const groups = groupWorkLogsByDate(board, '2026-08-04');
+
+    expect(groups.map((g) => g.label)).toEqual(['ӨНӨӨДӨР', '8-р сарын 2']);
+    expect(groups.map((g) => g.logs.map((l) => l.id))).toEqual([[3, 2], [1]]);
+  });
+
+  it('marks carried-over days as overdue and today as not', () => {
+    const groups = groupWorkLogsByDate(
+      [log({ id: 2, date: '2026-08-04' }), log({ id: 1, date: '2026-08-02' })],
+      '2026-08-04',
+    );
+    expect(groups.map((g) => g.overdue)).toEqual([false, true]);
+  });
+
+  it('stops calling an old day overdue once its work is finished', () => {
+    // The archive shows a completed day in full, and marking the last job
+    // «Болсон» has to take the warning off the heading — otherwise the heading
+    // contradicts the card right underneath it.
+    const groups = groupWorkLogsByDate(
+      [
+        log({ id: 3, date: '2026-08-02', status: 'Болсон' }),
+        log({ id: 2, date: '2026-08-02', status: 'Болсон аваагүй' }),
+      ],
+      '2026-08-04',
+    );
+    expect(groups[0]?.pending).toBe(0);
+    expect(groups[0]?.overdue).toBe(false);
+  });
+
+  it('counts only what is still outstanding on a part-finished day', () => {
+    const groups = groupWorkLogsByDate(
+      [
+        log({ id: 3, date: '2026-08-02', status: 'Болсон' }),
+        log({ id: 2, date: '2026-08-02', status: '' }),
+        log({ id: 1, date: '2026-08-02', status: 'Тооцоотой' }),
+      ],
+      '2026-08-04',
+    );
+    expect(groups[0]?.logs).toHaveLength(3);
+    expect(groups[0]?.pending).toBe(2);
+    expect(groups[0]?.overdue).toBe(true);
+  });
+
+  it('gives an empty board no groups at all', () => {
+    expect(groupWorkLogsByDate([], '2026-08-04')).toEqual([]);
+  });
+});
+
+describe('intakeLabel', () => {
+  it('shows just the clock for a job booked today', () => {
+    expect(
+      intakeLabel({ receivedTime: '14:30', date: '2026-08-04', id: 1 }, '2026-08-04'),
+    ).toBe('14:30');
+  });
+
+  it('adds the day for work carried over from an earlier one', () => {
+    expect(
+      intakeLabel({ receivedTime: '14:30', date: '2026-08-02', id: 1 }, '2026-08-04'),
+    ).toBe('08/02 14:30');
+  });
+
+  it('falls back to the id, which is when the row was created', () => {
+    const bookedAt = new Date(2026, 7, 4, 9, 5).getTime();
+    expect(intakeLabel({ receivedTime: '', date: '2026-08-04', id: bookedAt }, '2026-08-04')).toBe(
+      '09:05',
+    );
+  });
+
+  it('will not read a clock off an id from another day', () => {
+    // Imported and repaired rows carry ids that have nothing to do with the
+    // day they are filed under; inventing a time for those would be a lie.
+    const elsewhere = new Date(2020, 0, 1, 3, 0).getTime();
+    expect(intakeLabel({ receivedTime: '', date: '2026-08-04', id: elsewhere }, '2026-08-04')).toBe(
+      '',
+    );
+  });
+
+  it('shows the day alone when there is no usable time at all', () => {
+    expect(intakeLabel({ receivedTime: '', date: '2026-08-02', id: 7 }, '2026-08-04')).toBe('08/02');
+  });
+});
+
 describe('the board is ordered newest first', () => {
   it('puts the latest booking of the day at the top', () => {
     const day = [

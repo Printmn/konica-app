@@ -21,6 +21,12 @@ module.exports = tseslint.config(
       'android/**',
       'ios/**',
       'coverage/**',
+      // The Cloud Functions are a separate Node project with its own tsconfig
+      // and its own `npm test`; the app's type-aware rules cannot resolve
+      // `firebase-admin` from here.
+      'functions/**',
+      // Python, not JavaScript.
+      'tools/**',
       // Build-time config files: plain CommonJS, outside the app's tsconfig,
       // so the type-aware rules have nothing to work with.
       'babel.config.js',

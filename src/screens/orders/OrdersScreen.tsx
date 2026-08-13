@@ -18,6 +18,7 @@ import {
   archiveDates,
   createWorkLog,
   emptyWorkLogForm,
+  groupWorkLogsByDate,
   unitPriceOf,
   validateWorkLog,
   visibleWorkLogs,
@@ -32,6 +33,7 @@ import { exportDailyWorkLogs } from '@/services/export/excelService';
 import { notifyNewOrder } from '@/services/notifications/notificationService';
 import { notifyNewWorkLog } from '@/services/telegram/telegramService';
 import { useAppTheme } from '@/theme/ThemeProvider';
+import type { WorkLogGroup } from '@/features/worklogs/workLogLogic';
 import type { DocType, WorkLog, WorkLogForm as FormShape, WorkStatus } from '@/types';
 import { DAY_LABELS_MN, todayString, weekdayOf } from '@/utils/date';
 import { rawTotal } from '@/features/reports/reportCalculator';
@@ -58,6 +60,11 @@ import { WorkLogForm } from './components/WorkLogForm';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Tab = 'worklogs' | 'calculator';
+
+/** A day heading, or a job under one. */
+type BoardRow =
+  | { kind: 'header'; group: WorkLogGroup }
+  | { kind: 'log'; log: WorkLog; index: number };
 
 /** How long a submit stays locked after a successful save. */
 const SUBMIT_LOCK_MS = 1200;
@@ -90,7 +97,7 @@ export function OrdersScreen(): React.JSX.Element {
    * state: it has to take effect within the same tick, before React re-renders.
    */
   const submitting = useRef(false);
-  const listRef = useRef<FlatList<WorkLog>>(null);
+  const listRef = useRef<FlatList<BoardRow>>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormShape>(emptyWorkLogForm);
   /** The job being corrected, or `null` when the form is booking a new one. */
@@ -123,6 +130,28 @@ export function OrdersScreen(): React.JSX.Element {
     () => visibleWorkLogs(workLogs, archiveDate, today),
     [workLogs, archiveDate, today],
   );
+  /**
+   * The board as a flat list of day headings and cards.
+   *
+   * Unfinished work is carried forward, so a single column could hold three
+   * days at once with no way to tell them apart — the complaint was that
+   * nobody could see when a job had come in. Numbering stays global
+   * (`total - index`), so a card keeps the same number whichever day it sits
+   * under.
+   */
+  const rows = useMemo((): BoardRow[] => {
+    const out: BoardRow[] = [];
+    let index = 0;
+    for (const group of groupWorkLogsByDate(logs, today)) {
+      out.push({ kind: 'header', group });
+      for (const log of group.logs) {
+        out.push({ kind: 'log', log, index });
+        index += 1;
+      }
+    }
+    return out;
+  }, [logs, today]);
+
   const dates = useMemo(() => archiveDates(workLogs), [workLogs]);
 
   /**
@@ -331,8 +360,10 @@ export function OrdersScreen(): React.JSX.Element {
         {tab === 'worklogs' ? (
           <FlatList
             ref={listRef}
-            data={logs}
-            keyExtractor={(item) => String(item.id)}
+            data={rows}
+            keyExtractor={(item) =>
+              item.kind === 'header' ? `day-${item.group.date}` : String(item.log.id)
+            }
             contentContainerStyle={styles.list}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
             showsVerticalScrollIndicator={false}
@@ -398,22 +429,50 @@ export function OrdersScreen(): React.JSX.Element {
                 />
               )
             }
-            renderItem={({ item, index }) => (
-              <WorkLogCard
-                log={item}
-                index={index}
-                total={logs.length}
-                today={today}
-                canEdit={canEdit}
-                canDelete={canDelete}
-                onStatusChange={handleStatusChange}
-                onEditNote={(log) => setNoteDraft({ id: log.id, note: log.note ?? '' })}
-                onEdit={handleEdit}
-                onCreateDocument={handleCreateDocument}
-                onDelete={handleDelete}
-                isDeleteArmed={armedId === item.id}
-              />
-            )}
+            renderItem={({ item }) =>
+              item.kind === 'header' ? (
+                <View style={styles.dayHeader}>
+                  <Text
+                    style={[
+                      styles.dayHeaderText,
+                      {
+                        // Carried-over days are the ones worth noticing, so
+                        // they are the ones that get a colour.
+                        color: item.group.overdue ? theme.colors.error : theme.custom.mutedText,
+                      },
+                    ]}
+                  >
+                    {item.group.label} · {item.group.logs.length} ажил
+                    {item.group.overdue ? ` · ${item.group.pending} хийгдээгүй` : ''}
+                  </Text>
+                  <View
+                    style={[
+                      styles.dayHeaderRule,
+                      {
+                        backgroundColor: item.group.overdue
+                          ? theme.colors.error
+                          : theme.custom.subtleBorder,
+                      },
+                    ]}
+                  />
+                </View>
+              ) : (
+                <WorkLogCard
+                  log={item.log}
+                  index={item.index}
+                  total={logs.length}
+                  today={today}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
+                  onStatusChange={handleStatusChange}
+                  onEditNote={(log) => setNoteDraft({ id: log.id, note: log.note ?? '' })}
+                  onEdit={handleEdit}
+                  onCreateDocument={handleCreateDocument}
+                  onDelete={handleDelete}
+                  isDeleteArmed={armedId === item.log.id}
+                />
+              )
+            }
           />
         ) : (
           <CalculatorTab
@@ -565,6 +624,10 @@ const styles = StyleSheet.create({
   summaryText: { fontSize: 12, fontWeight: '700' },
   headerActions: { flexDirection: 'row' },
   separator: { height: 10 },
+  /** A day heading: the label, then a rule that runs to the edge. */
+  dayHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 6 },
+  dayHeaderText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.6 },
+  dayHeaderRule: { flex: 1, height: 1, opacity: 0.6 },
   fab: { position: 'absolute', right: 20, bottom: 24 },
   modal: { margin: 16, borderRadius: 20, padding: 16, gap: 12, maxHeight: '75%' },
   /**

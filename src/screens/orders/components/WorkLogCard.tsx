@@ -3,7 +3,12 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
 import { splitSummary } from '@/features/worklogs/paySplit';
-import { deadlineLabel, quantityLabel, workLogRowColor } from '@/features/worklogs/workLogLogic';
+import {
+  deadlineLabel,
+  intakeLabel,
+  quantityLabel,
+  workLogRowColor,
+} from '@/features/worklogs/workLogLogic';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { DocType, WorkLog, WorkStatus } from '@/types';
 import { effectivePrice, formatCurrency } from '@/utils/price';
@@ -84,6 +89,7 @@ function WorkLogCardBase({
   }, [log.phone]);
 
   const price = effectivePrice(log);
+  const intake = intakeLabel(log, today);
 
   return (
     <Card accentColor={accent} padded={false}>
@@ -96,12 +102,6 @@ function WorkLogCardBase({
             <Text style={[styles.count, { color: theme.colors.primary }]}> {count}</Text>
           )}
         </Text>
-
-        {log.date && log.date !== today ? (
-          <View style={styles.carryOver}>
-            <Text style={styles.carryOverText}>📅 {log.date.slice(5).replace('-', '/')}</Text>
-          </View>
-        ) : null}
 
         {canEdit ? (
           <>
@@ -165,7 +165,10 @@ function WorkLogCardBase({
       ) : null}
 
       <View style={styles.meta}>
-        {log.receivedTime ? <Text style={styles.metaItem}>⏰ {log.receivedTime}</Text> : null}
+        {/* When it came in. The board carries unfinished work forward, so an
+            older job shows its day here too — «⏰ 14:30» alone was the thing
+            nobody could place. */}
+        {intake ? <Text style={styles.metaItem}>📥 {intake}</Text> : null}
 
         {deadline ? (
           <Text style={[styles.metaItem, log.isTomorrow && styles.metaTomorrow]}>
@@ -261,13 +264,6 @@ const styles = StyleSheet.create({
   dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)' },
   job: { flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 18 },
   count: { fontSize: 13, fontWeight: '900' },
-  carryOver: {
-    backgroundColor: '#ffedd5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  carryOverText: { fontSize: 9, fontWeight: '700', color: '#9a3412' },
   editIcon: { fontSize: 14, opacity: 0.55 },
   deleteIcon: { fontSize: 14, opacity: 0.4 },
   deleteArmed: { backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },

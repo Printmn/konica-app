@@ -104,6 +104,14 @@ export interface WorkLog {
   payType: PayType;
   /** Only meaningful when `payType` is «Холимог». */
   paySplit?: PaySplit;
+  /**
+   * Which install booked the job.
+   *
+   * Only used to keep the push notification off the device that caused it —
+   * nothing in the app reads it, and rows written before this existed simply
+   * do not have it.
+   */
+  deviceId?: string;
   isDelivery: boolean;
   isTomorrow: boolean;
   /** `YYYY-MM-DD` chosen when «Маргааш» is set to a specific day, not just "tomorrow". */
@@ -330,7 +338,24 @@ export type RemoteKey =
   | 'tasks'
   | 'chat'
   /** Issued invoice numbers, one node per number — a shared claim registry. */
-  | 'invoices';
+  | 'invoices'
+  /** One push token per install, so the server knows where to send alerts. */
+  | 'devices';
+
+/**
+ * A device that can receive push notifications.
+ *
+ * Stored at `/pmn/devices/<deviceId>` and read by the Cloud Functions. `role`
+ * is kept so an alert can be aimed at managers only — the day's takings are
+ * not the counter iPad's business.
+ */
+export interface PushDevice {
+  deviceId: string;
+  token: string;
+  role: string;
+  platform: string;
+  updatedAt: number;
+}
 
 export type AsyncState = 'idle' | 'loading' | 'success' | 'error';
 

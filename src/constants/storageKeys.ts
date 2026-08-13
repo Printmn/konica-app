@@ -32,6 +32,8 @@ export const STORAGE_KEYS = {
   lastInvoiceNumber: 'pmn_last_invoice_number',
   /** Android folder the shop picked for exports, as a Storage Access Framework URI. */
   exportFolder: 'pmn_export_folder',
+  /** Last Expo push token published, so an unchanged one is not rewritten. */
+  pushToken: 'pmn_push_token',
 } as const;
 
 /** Values that must never touch AsyncStorage — these go to SecureStore. */

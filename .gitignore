@@ -8,3 +8,9 @@ ios/
 android/
 .env
 .env.local
+
+# Firebase service-account private keys. These grant admin access to the whole
+# project — unlike google-services.json, which is a public client config and
+# has to stay committed for EAS Build to see it.
+*-firebase-adminsdk-*.json
+service-account*.json

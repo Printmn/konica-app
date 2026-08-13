@@ -70,6 +70,12 @@
           "tomorrowDate": {
             ".validate": "newData.isString() && newData.val().length <= 10"
           },
+          "deviceId": {
+            ".validate": "newData.isString() && newData.val().length <= 64"
+          },
+          "paySplit": {
+            ".validate": "newData.hasChildren()"
+          },
           "$other": {
             ".validate": true
           }
@@ -277,6 +283,32 @@
           },
           "image": {
             ".validate": "newData.isString() && newData.val().length <= 400000"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "devices": {
+        ".indexOn": [
+          "updatedAt"
+        ],
+        "$deviceId": {
+          ".validate": "!newData.exists() || (newData.hasChildren(['deviceId', 'token', 'updatedAt']) && newData.child('token').isString() && newData.child('deviceId').isString() && newData.child('updatedAt').isNumber())",
+          "deviceId": {
+            ".validate": "newData.isString() && newData.val().length <= 64"
+          },
+          "token": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "role": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          },
+          "platform": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber()"
           },
           "$other": {
             ".validate": false

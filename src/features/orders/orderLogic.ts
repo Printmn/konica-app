@@ -1,3 +1,4 @@
+import { peekDeviceId } from '@/services/device/deviceId';
 import type { Order, PayType, WorkLog, WorkLogForm } from '@/types';
 import { nowTimeString, toDateString } from '@/utils/date';
 import { nextId } from '@/utils/id';
@@ -17,6 +18,15 @@ export interface QuickOrderInput {
   unitPrice: number;
   quantity: number;
   payType: PayType;
+  /**
+   * `HH:MM` the job came over the counter, when the clerk has adjusted it.
+   *
+   * Left out it means "now", which is the case that matters — the quick screen
+   * exists to book a sale in two taps. It is here at all because the counter
+   * writes a batch up after the fact, and stamping four jobs with the same
+   * closing-time minute makes the day's sequence unreadable.
+   */
+  receivedTime?: string;
   now?: Date;
 }
 
@@ -29,10 +39,10 @@ export function buildQuickOrder(
   input: QuickOrderInput,
   existingLogs: readonly WorkLog[],
 ): QuickOrderResult {
-  const { description, unitPrice, quantity, payType, now = new Date() } = input;
+  const { description, unitPrice, quantity, payType, receivedTime, now = new Date() } = input;
 
   const total = unitPrice * quantity;
-  const time = nowTimeString(now);
+  const time = receivedTime?.trim() || nowTimeString(now);
   const date = toDateString(now);
   const label = `${description} (${quantity}ш)`;
 
@@ -77,6 +87,8 @@ export function buildQuickOrder(
     hasVat: false,
     orderDate: date,
     agreedPrice: '',
+    // Recorded so the push notification skips the device that booked it.
+    deviceId: peekDeviceId(),
   };
 
   return { order, workLog };

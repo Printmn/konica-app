@@ -22,6 +22,7 @@
     },
     "android": {
       "package": "mn.printmn.konica",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a56db"

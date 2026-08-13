@@ -1,0 +1,21 @@
+{
+  "name": "printmn-functions",
+  "description": "Push notifications for Printmn Konica",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": { "node": "20" },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test --experimental-strip-types src/*.test.ts",
+    "deploy": "npm run build && npx firebase-tools@latest deploy --only functions",
+    "logs": "npx firebase-tools@latest functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^6.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^20.16.0"
+  }
+}

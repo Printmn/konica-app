@@ -18,6 +18,8 @@ import {
   restoreSession,
   verifyPin,
 } from './authService';
+import { registerForPush, unregisterFromPush } from '@/services/notifications/pushRegistry';
+
 import { can, roleLabel, type Capability } from './permissions';
 
 interface AuthContextValue {
@@ -52,6 +54,9 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         setNeedsPinSetup(!configured);
         setSession(restored);
         setIsRestoring(false);
+        // Republished on every launch: tokens rotate on reinstall and restore,
+        // and a stale one means an alert that silently goes nowhere.
+        if (restored !== null) void registerForPush(restored.role);
       }
     })();
     return () => {
@@ -66,12 +71,16 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       const next: Session = { role: result.role, workerName: result.workerName };
       await persistSession(next);
       setSession(next);
+      void registerForPush(next.role);
       return true;
     },
     [],
   );
 
   const logout = useCallback(async () => {
+    // Taken off the list first: a shared iPad handed to the next shift should
+    // not keep buzzing with the last person's alerts.
+    await unregisterFromPush();
     await clearSession();
     setSession(null);
   }, []);

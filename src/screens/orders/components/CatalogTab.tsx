@@ -4,11 +4,13 @@ import { Button, Icon, Modal, Portal, SegmentedButtons, TextInput } from 'react-
 
 import { EmptyState } from '@/components/feedback/StateViews';
 import { SearchBar } from '@/components/ui/SearchBar';
+import { TimeField } from '@/components/ui/TimeField';
 import { getServiceEmoji } from '@/constants/emoji';
 import { CUSTOM_PRICE_CATEGORIES } from '@/constants/config';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { PayType, ServiceItem } from '@/types';
+import { nowTimeString } from '@/utils/date';
 import { formatCurrency, parsePrice } from '@/utils/price';
 
 /**
@@ -38,6 +40,8 @@ export interface QuickOrderDraft {
   unitPrice: number;
   quantity: number;
   payType: PayType;
+  /** `HH:MM`, filled in from the clock when the sheet opens. */
+  receivedTime: string;
 }
 
 interface CatalogTabProps {
@@ -59,6 +63,12 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
   const [customFor, setCustomFor] = useState('');
 
   const [quantity, setQuantity] = useState('1');
+  /**
+   * When the job came in. Read off the clock the moment a sheet opens, so the
+   * common case needs no attention at all — it is only there to be corrected
+   * when the counter books a sale late.
+   */
+  const [receivedTime, setReceivedTime] = useState(() => nowTimeString());
   const [payType, setPayType] = useState<PayType>('Данс');
   const [customDesc, setCustomDesc] = useState('');
   const [customPrice, setCustomPrice] = useState('');
@@ -110,6 +120,7 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
     setCustomOpen(false);
     setCustomFor('');
     setQuantity('1');
+    setReceivedTime(nowTimeString());
     setPayType('Данс');
     setCustomDesc('');
     setCustomPrice('');
@@ -122,6 +133,7 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
    */
   const openFor = (service: ServiceItem): void => {
     setQuantity('1');
+    setReceivedTime(nowTimeString());
     if (isNegotiated(service)) {
       setCustomFor(service.name);
       setCustomDesc(service.name);
@@ -139,6 +151,7 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
       unitPrice: parsePrice(selected.price),
       quantity: Math.max(1, Number(quantity) || 1),
       payType,
+      receivedTime,
     });
     closeSheets();
   };
@@ -151,6 +164,7 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
       unitPrice,
       quantity: Math.max(1, Number(quantity) || 1),
       payType,
+      receivedTime,
     });
     closeSheets();
   };
@@ -306,6 +320,18 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
             dense
           />
 
+          <View style={styles.timeRow}>
+            <Text style={[styles.timeLabel, { color: theme.custom.mutedText }]}>
+              📥 Захиалга орсон цаг
+            </Text>
+            <TimeField
+              label=""
+              value={receivedTime}
+              onChange={setReceivedTime}
+              placeholder={nowTimeString()}
+            />
+          </View>
+
           <SegmentedButtons
             value={payType}
             onValueChange={(value) => setPayType(value)}
@@ -368,6 +394,18 @@ function CatalogTabBase({ services, onConfirm }: CatalogTabProps): React.JSX.Ele
             keyboardType="number-pad"
             dense
           />
+
+          <View style={styles.timeRow}>
+            <Text style={[styles.timeLabel, { color: theme.custom.mutedText }]}>
+              📥 Захиалга орсон цаг
+            </Text>
+            <TimeField
+              label=""
+              value={receivedTime}
+              onChange={setReceivedTime}
+              placeholder={nowTimeString()}
+            />
+          </View>
 
           <SegmentedButtons
             value={payType}
@@ -434,6 +472,8 @@ const styles = StyleSheet.create({
   },
   categoryChipText: { fontSize: 14, fontWeight: '800' },
   count: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  timeRow: { gap: 6 },
+  timeLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.4 },
 
   serviceRow: {
     flexDirection: 'row',

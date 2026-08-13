@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "217495477951",
+    "firebase_url": "https://printmn-c0d28-default-rtdb.firebaseio.com",
+    "project_id": "printmn-c0d28",
+    "storage_bucket": "printmn-c0d28.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:217495477951:android:3f4c390e9a47ebcf55b00a",
+        "android_client_info": {
+          "package_name": "mn.printmn.konica"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCWfvQtHWTWnjSaW-TSx5szb0BeqGHXlXU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

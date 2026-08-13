@@ -1,31 +1,47 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import type { InventoryItem, WorkLog } from '@/types';
 import { formatNumber } from '@/utils/price';
 import { logger } from '@/utils/logger';
 
 /**
- * Local notifications.
+ * Notifications.
  *
- * Replaces the Web Audio "ding dong" the browser build synthesised with an
- * oscillator. A real notification survives the app being backgrounded, which
- * the oscillator never could.
+ * Two sources now feed this. The app raises its own for things it just did,
+ * and the Cloud Functions in `functions/` push for things another device did —
+ * which is the only kind that can arrive with the app closed.
+ *
+ * They overlap in exactly one situation: the app is open, a colleague sends a
+ * chat message, the app shows it locally *and* the push arrives a second
+ * later. So a push is silenced while the app is in the foreground — anything
+ * worth seeing then is already on the screen. Push notifications are the ones
+ * carrying a `kind` in their data; local ones never do.
  */
 
+const isRemote = (notification: Notifications.Notification): boolean => {
+  const data = notification.request.content.data as Record<string, unknown> | null;
+  return typeof data?.kind === 'string';
+};
+
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const muted = isRemote(notification) && AppState.currentState === 'active';
+    return {
+      shouldPlaySound: !muted,
+      shouldSetBadge: true,
+      shouldShowBanner: !muted,
+      shouldShowList: true,
+    };
+  },
 });
 
 const CHANNELS = {
   orders: 'orders',
   stock: 'stock',
   chat: 'chat',
+  /** Jobs coming due — pushed by the scheduled sweep, never raised locally. */
+  deadline: 'deadline',
 } as const;
 
 let permissionGranted: boolean | null = null;
@@ -48,6 +64,11 @@ export async function initNotifications(): Promise<boolean> {
         Notifications.setNotificationChannelAsync(CHANNELS.chat, {
           name: 'Дотоод чат',
           importance: Notifications.AndroidImportance.HIGH,
+        }),
+        Notifications.setNotificationChannelAsync(CHANNELS.deadline, {
+          name: 'Хугацаа дөхсөн ажил',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
         }),
       ]);
     }

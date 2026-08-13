@@ -6,8 +6,9 @@ import type {
   WorkLog,
   WorkLogForm,
 } from '@/types';
+import { peekDeviceId } from '@/services/device/deviceId';
 import { nextId } from '@/utils/id';
-import { todayString } from '@/utils/date';
+import { MONTH_NAMES_MN, shiftDate, todayString } from '@/utils/date';
 import { parsePrice } from '@/utils/price';
 
 /**
@@ -50,6 +51,16 @@ export const emptyWorkLogForm = (): WorkLogForm => ({
  * only leaves the board once it is marked "Болсон" or "Болсон аваагүй", which
  * is why unfinished work keeps surfacing the next morning.
  */
+/**
+ * A job the shop is done with.
+ *
+ * Two statuses count: handed over, and finished but not yet collected. Both
+ * mean nothing more is owed at the press — which is why the board stops
+ * carrying them forward.
+ */
+export const isFinished = (log: Pick<WorkLog, 'status'>): boolean =>
+  log.status === 'Болсон' || log.status === 'Болсон аваагүй';
+
 export const visibleWorkLogs = (
   workLogs: readonly WorkLog[],
   archiveDate: string | null,
@@ -60,7 +71,7 @@ export const visibleWorkLogs = (
     : workLogs.filter(
         (log) =>
           log.date === today ||
-          (log.date < today && log.status !== 'Болсон' && log.status !== 'Болсон аваагүй'),
+          (log.date < today && !isFinished(log)),
       );
   return newestFirst(rows);
 };
@@ -82,6 +93,118 @@ const newestFirst = (rows: readonly WorkLog[]): WorkLog[] =>
     const byNumber = (Number(b.no) || 0) - (Number(a.no) || 0);
     return byNumber !== 0 ? byNumber : b.id - a.id;
   });
+
+/**
+ * The board, cut into days.
+ *
+ * The board deliberately carries unfinished work forward, so a Thursday screen
+ * can hold Monday's job, Tuesday's job and today's — and until now they were
+ * one undivided column with no dates on the cards. Nobody could tell what had
+ * been sitting there for three days.
+ *
+ * Grouping does not hide anything and does not reorder within a day; it only
+ * puts a line and a name between one day and the next.
+ */
+export interface WorkLogGroup {
+  /** `YYYY-MM-DD`, the day the jobs were booked. */
+  date: string;
+  /** «ӨНӨӨДӨР», «ӨЧИГДӨР», or «8-р сарын 7». */
+  label: string;
+  /** How many of the day's jobs are still outstanding. */
+  pending: number;
+  /**
+   * An earlier day that still owes work.
+   *
+   * A past day whose jobs are all finished is *not* overdue — the archive view
+   * shows completed days in full, and marking one «Болсон» has to take the
+   * warning off it rather than leave the heading contradicting the card.
+   */
+  overdue: boolean;
+  logs: WorkLog[];
+}
+
+/** `2026-08-07` → `8-р сарын 7`. */
+export const dayLabel = (date: string, today: string = todayString()): string => {
+  if (date === today) return 'ӨНӨӨДӨР';
+  if (date === shiftDate(today, -1)) return 'ӨЧИГДӨР';
+  if (date === shiftDate(today, 1)) return 'МАРГААШ';
+  const [, month, day] = date.split('-');
+  const name = MONTH_NAMES_MN[Number(month) - 1];
+  if (!name || !day) return date;
+  return `${name.replace('-р сар', '-р сарын')} ${Number(day)}`;
+};
+
+/**
+ * Splits an already-sorted board into day groups.
+ *
+ * Order is inherited from the list it is handed rather than re-sorted, so the
+ * one place that decides what comes first stays `newestFirst`.
+ */
+export const groupWorkLogsByDate = (
+  logs: readonly WorkLog[],
+  today: string = todayString(),
+): WorkLogGroup[] => {
+  const groups: WorkLogGroup[] = [];
+  for (const log of logs) {
+    const last = groups[groups.length - 1];
+    if (last && last.date === log.date) {
+      last.logs.push(log);
+      if (!isFinished(log)) last.pending += 1;
+      continue;
+    }
+    groups.push({
+      date: log.date,
+      label: dayLabel(log.date, today),
+      pending: isFinished(log) ? 0 : 1,
+      overdue: false,
+      logs: [log],
+    });
+  }
+  // Decided once the day is complete: a past day is only overdue while it
+  // still has work left on it.
+  for (const group of groups) {
+    group.overdue = group.date < today && group.pending > 0;
+  }
+  return groups;
+};
+
+/**
+ * When the job came over the counter.
+ *
+ * `receivedTime` is typed by hand and is often left blank, so the id — a
+ * millisecond timestamp — stands in for it. Old rows carried forward show
+ * their day as well, because on a board that holds three days at once «14:30»
+ * on its own says nothing.
+ */
+export const intakeLabel = (
+  log: Pick<WorkLog, 'receivedTime' | 'date' | 'id'>,
+  today: string = todayString(),
+): string => {
+  const time = log.receivedTime || clockFromId(log.id, log.date);
+  const sameDay = !log.date || log.date === today;
+  if (sameDay) return time;
+
+  const day = log.date.slice(5).replace('-', '/');
+  return time ? `${day} ${time}` : day;
+};
+
+/**
+ * `HH:MM` from a record id, when that id really is a booking timestamp.
+ *
+ * Ids have been millisecond timestamps since the web build, but only for rows
+ * created on the day they claim — an imported or repaired row can carry an id
+ * from another day entirely, and showing its clock time would be a lie. So the
+ * day has to agree before the time is trusted.
+ */
+const clockFromId = (id: number, date: string): string => {
+  if (!Number.isFinite(id) || id < 1_000_000_000_000) return '';
+  const stamp = new Date(id);
+  const iso = `${stamp.getFullYear()}-${String(stamp.getMonth() + 1).padStart(2, '0')}-${String(
+    stamp.getDate(),
+  ).padStart(2, '0')}`;
+  if (date && iso !== date) return '';
+  return `${String(stamp.getHours()).padStart(2, '0')}:${String(stamp.getMinutes()).padStart(2, '0')}`;
+};
 
 /** Distinct dates present in the log set, newest first. */
 export const archiveDates = (workLogs: readonly WorkLog[]): string[] =>
@@ -180,7 +303,9 @@ export const createWorkLog = (
     .filter((log) => log.date === date)
     .reduce((max, log) => Math.max(max, Number(log.no) || 0), 0);
 
-  return { ...form, id: nextId(), date, no: highest + 1 };
+  // The booking device is stamped on so the push notification can skip it —
+  // nobody needs telling about a job they just typed in themselves.
+  return { ...form, id: nextId(), date, no: highest + 1, deviceId: peekDeviceId() };
 };
 
 /**
