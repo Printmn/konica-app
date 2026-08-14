@@ -7,6 +7,7 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
 
 import type { Employee, Role, Session } from '@/types';
 
@@ -18,7 +19,10 @@ import {
   restoreSession,
   verifyPin,
 } from './authService';
-import { registerForPush, unregisterFromPush } from '@/services/notifications/pushRegistry';
+import {
+  registerForPush,
+  unregisterFromPush,
+} from '@/services/notifications/pushRegistry';
 
 import { can, roleLabel, type Capability } from './permissions';
 
@@ -63,6 +67,26 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       cancelled = true;
     };
   }, []);
+
+  /**
+   * Re-checks the push registration whenever the app comes forward.
+   *
+   * Notification permission can be turned on from iOS Settings long after the
+   * app last launched, and until then this device is simply absent from
+   * `/pmn/devices` — which looks, from the shop floor, exactly like push not
+   * working at all. Coming back to the app is the moment that most often
+   * follows a trip to Settings, so it is the moment worth re-checking. The
+   * call is cheap: it writes only when the token actually changed.
+   */
+  useEffect(() => {
+    const role = session?.role;
+    if (role === undefined || role === null) return;
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void registerForPush(role);
+    });
+    return () => subscription.remove();
+  }, [session?.role]);
 
   const login = useCallback(
     async (attemptedRole: Role, pin: string, employees: readonly Employee[]) => {

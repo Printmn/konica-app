@@ -47,31 +47,64 @@ const projectId = (): string | undefined => {
 };
 
 /**
+ * Why a device is or is not on the list.
+ *
+ * Returned rather than logged, because the one machine that needs this
+ * answer is the one in the shop — a second iPad that quietly never registered
+ * looks exactly like a notification system that does not work.
+ */
+export type PushStatus =
+  | { state: 'registered'; token: string }
+  /** The person said no, or never saw the prompt. Settings can fix this. */
+  | { state: 'denied' }
+  /** A simulator, or a build with no push credentials. Nothing to be done. */
+  | { state: 'unsupported'; reason: string }
+  /** Token in hand, but Firebase would not take it — usually offline. */
+  | { state: 'unpublished'; token: string; reason: string };
+
+let lastStatus: PushStatus = { state: 'unsupported', reason: 'Хараахан шалгаагүй' };
+
+/** The most recent outcome, for the settings screen to display. */
+export const peekPushStatus = (): PushStatus => lastStatus;
+
+/**
  * Publishes this install's push token, if it has one.
  *
- * Returns the token, or `null` when the device cannot receive push at all —
- * a simulator, a denied permission, or a build without credentials. Safe to
- * call on every launch: it only writes when the token changed or a week has
- * passed.
+ * Safe to call on every launch and every time the app comes forward: it only
+ * writes when the token changed or a week has passed. `force` skips that
+ * shortcut, for the "try again" button.
  */
-export async function registerForPush(role: string): Promise<string | null> {
+export async function registerForPush(role: string, force = false): Promise<PushStatus> {
+  const finish = (status: PushStatus): PushStatus => {
+    lastStatus = status;
+    return status;
+  };
+
   try {
-    const permission = await Notifications.getPermissionsAsync();
-    if (!permission.granted) return null;
+    // Asking again is free once the answer is already "no" — iOS returns the
+    // stored decision without showing anything — and it means a first launch
+    // that raced past the prompt still gets one.
+    let permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted && permission.canAskAgain) {
+      permission = await Notifications.requestPermissionsAsync();
+    }
+    if (!permission.granted) return finish({ state: 'denied' });
 
     const id = projectId();
     if (id === undefined) {
       logger.warn('No EAS projectId — push tokens cannot be issued.');
-      return null;
+      return finish({ state: 'unsupported', reason: 'projectId алга' });
     }
 
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: id });
-    if (!token) return null;
+    if (!token) return finish({ state: 'unsupported', reason: 'Токен гарсангүй' });
 
     const deviceId = await getDeviceId();
     const cached = await readJson<CachedRegistration | null>(STORAGE_KEYS.pushToken, null);
     const fresh = cached !== null && cached.token === token;
-    if (fresh && Date.now() - cached.at < REFRESH_AFTER_MS) return token;
+    if (!force && fresh && Date.now() - cached.at < REFRESH_AFTER_MS) {
+      return finish({ state: 'registered', token });
+    }
 
     const device: PushDevice = {
       deviceId,
@@ -84,15 +117,18 @@ export async function registerForPush(role: string): Promise<string | null> {
     const result = await rtdbClient.writeChild('devices', deviceId, device);
     if (!result.ok) {
       logger.warn('Could not publish push token', result.error.message);
-      return token;
+      return finish({ state: 'unpublished', token, reason: result.error.message });
     }
 
     await writeJson(STORAGE_KEYS.pushToken, { token, at: Date.now() });
-    return token;
+    return finish({ state: 'registered', token });
   } catch (error) {
-    // A device with no push credentials is a normal state, not a fault.
+    // A simulator has no push credentials at all; that is a normal state.
     logger.debug('Push registration skipped', error);
-    return null;
+    return finish({
+      state: 'unsupported',
+      reason: error instanceof Error ? error.message : 'Тодорхойгүй алдаа',
+    });
   }
 }
 

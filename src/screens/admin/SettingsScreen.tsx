@@ -14,6 +14,11 @@ import { pickSpreadsheet } from '@/services/media/imageService';
 import { clearErrorLog, formatErrorLog } from '@/services/monitoring/crashReporter';
 import { saveTextAndShare } from '@/services/export/fileService';
 import { clearExportFolder } from '@/services/export/fileService';
+import {
+  peekPushStatus,
+  registerForPush,
+  type PushStatus,
+} from '@/services/notifications/pushRegistry';
 import { createBackup, restoreBackup } from '@/services/sync/backupService';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useToast } from '@/hooks/useToast';
@@ -30,6 +35,36 @@ import { parsePrice } from '@/utils/price';
  * matched on name, so an import updates existing items rather than duplicating.
  */
 
+/** One line the counter can read, per push state. */
+function pushSummary(status: PushStatus): { title: string; hint: string; icon: string } {
+  switch (status.state) {
+    case 'registered':
+      return {
+        title: 'Мэдэгдэл асаалттай',
+        hint: `Энэ төхөөрөмж бүртгэгдсэн · ${status.token.slice(-12)}`,
+        icon: 'bell-check',
+      };
+    case 'denied':
+      return {
+        title: 'Мэдэгдэл хаалттай',
+        hint: 'Тохиргоо → Мэдэгдэл хэсгээс зөвшөөрөөд доорхыг дарна уу.',
+        icon: 'bell-off',
+      };
+    case 'unpublished':
+      return {
+        title: 'Бүртгэгдээгүй байна',
+        hint: `Серверт бичиж чадсангүй: ${status.reason}`,
+        icon: 'bell-alert',
+      };
+    default:
+      return {
+        title: 'Мэдэгдэл боломжгүй',
+        hint: status.reason,
+        icon: 'bell-remove',
+      };
+  }
+}
+
 export function SettingsScreen(): React.JSX.Element {
   const theme = useAppTheme();
   const navigation = useNavigation();
@@ -37,6 +72,29 @@ export function SettingsScreen(): React.JSX.Element {
   const { role, logout, can } = useAuth();
   const { show, showError } = useToast();
   const { gutter } = useResponsive();
+  /**
+   * Push state, shown rather than logged.
+   *
+   * A device that never registered is invisible from the outside: no error,
+   * no alert, nothing to point at. This turns that into one readable line, and
+   * a button that retries — which is the whole fix when someone allowed
+   * notifications in Settings after the app had already started.
+   */
+  const [pushStatus, setPushStatus] = useState<PushStatus>(peekPushStatus);
+  const [checkingPush, setCheckingPush] = useState(false);
+
+  const recheckPush = useCallback(async () => {
+    setCheckingPush(true);
+    const next = await registerForPush(role ?? '', true);
+    setPushStatus(next);
+    setCheckingPush(false);
+    show(
+      next.state === 'registered'
+        ? 'Мэдэгдэл бүртгэгдлээ'
+        : 'Бүртгэж чадсангүй — доорх тайлбарыг уншина уу',
+      next.state === 'registered' ? 'success' : 'error',
+    );
+  }, [role, show]);
   const {
     inventory,
     setInventory,
@@ -247,6 +305,30 @@ export function SettingsScreen(): React.JSX.Element {
                 style={styles.flex}
               >
                 Одоо синк хийх
+              </Button>
+            </View>
+          </List.Section>
+        </Card>
+
+        <Card style={styles.card} padded={false}>
+          <List.Section title="🔔 Мэдэгдэл">
+            <List.Item
+              title={pushSummary(pushStatus).title}
+              description={pushSummary(pushStatus).hint}
+              descriptionNumberOfLines={3}
+              left={(props) => <List.Icon {...props} icon={pushSummary(pushStatus).icon} />}
+            />
+            <Divider />
+            <View style={styles.inline}>
+              <Button
+                mode="contained-tonal"
+                icon="bell-ring"
+                loading={checkingPush}
+                disabled={checkingPush}
+                onPress={() => void recheckPush()}
+                style={styles.flex}
+              >
+                Мэдэгдэл дахин холбох
               </Button>
             </View>
           </List.Section>
