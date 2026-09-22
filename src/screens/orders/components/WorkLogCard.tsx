@@ -50,6 +50,17 @@ interface WorkLogCardProps {
   index: number;
   total: number;
   today: string;
+  /**
+   * The number printed on the card, when the screen wants to decide it.
+   *
+   * The live board counts down — `total - index` — so the newest job carries
+   * the highest number and that number does not shift as work is added. A day
+   * that is over has no newest job, so the archive counts up from 1 the way the
+   * report does. Same card, two readings of "which one is this".
+   */
+  ordinal?: number;
+  /** `08/04`, shown beside the number when the list spans more than one day. */
+  dateTag?: string | undefined;
   canEdit: boolean;
   /** Removing a job from the record is a manager's decision, not the counter's. */
   canDelete: boolean;
@@ -67,6 +78,8 @@ function WorkLogCardBase({
   index,
   total,
   today,
+  ordinal,
+  dateTag,
   canEdit,
   canDelete,
   onStatusChange,
@@ -94,7 +107,14 @@ function WorkLogCardBase({
   return (
     <Card accentColor={accent} padded={false}>
       <View style={styles.head}>
-        <Text style={[styles.index, { color: theme.custom.mutedText }]}>{total - index}</Text>
+        <View style={styles.indexBlock}>
+          <Text style={[styles.index, { color: theme.custom.mutedText }]}>
+            {ordinal ?? total - index}
+          </Text>
+          {dateTag ? (
+            <Text style={[styles.indexDate, { color: theme.custom.mutedText }]}>{dateTag}</Text>
+          ) : null}
+        </View>
         <View style={[styles.dot, { backgroundColor: accent }]} />
         <Text style={[styles.job, { color: theme.colors.onSurface }]} numberOfLines={2}>
           {log.job}
@@ -260,7 +280,9 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 4,
   },
-  index: { fontSize: 10, fontWeight: '900', width: 18 },
+  indexBlock: { width: 34, alignItems: 'center' },
+  index: { fontSize: 10, fontWeight: '900' },
+  indexDate: { fontSize: 8, fontWeight: '700', marginTop: 1 },
   dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)' },
   job: { flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 18 },
   count: { fontSize: 13, fontWeight: '900' },
@@ -349,6 +371,8 @@ export const WorkLogCard = memo(
     prev.log === next.log &&
     prev.index === next.index &&
     prev.total === next.total &&
+    prev.ordinal === next.ordinal &&
+    prev.dateTag === next.dateTag &&
     prev.canEdit === next.canEdit &&
     prev.canDelete === next.canDelete &&
     prev.isDeleteArmed === next.isDeleteArmed,

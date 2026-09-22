@@ -35,6 +35,8 @@ const SEED: readonly SeedRow[] = [
   { name: 'Фото цаас А4 300гр (2 талтай)', price: '12,000₮', stock: '22', category: 'Цаас' },
   { name: 'Фото цаас А3 (2 талтай)', price: '19,000₮', stock: '2', category: 'Цаас' },
   { name: 'Фото шар А4', price: '5,500₮', stock: '2', category: 'Цаас' },
+  { name: 'Фото цаас 10x15', price: '1,000₮', stock: '0', category: 'Цаас' },
+  { name: 'Фото цаас 16x22', price: '2,500₮', stock: '0', category: 'Цаас' },
   { name: 'Стикер цаас А4 гялгар', price: '11,000₮', stock: '0', category: 'Цаас' },
 
   { name: 'Цагаан аяга', price: '2,200₮', stock: '0', category: 'Бэлэг дурсгал' },
@@ -94,9 +96,12 @@ export const missingSeedCount = (existing: readonly InventoryItem[]): number => 
  */
 export const addMissingSeedItems = (
   existing: readonly InventoryItem[],
+  only?: (row: { name: string; category: string }) => boolean,
 ): InventoryItem[] => {
   const have = new Set(existing.map((item) => key(item.name)));
-  const additions = SEED.filter((row) => !have.has(key(row.name))).map(
+  const additions = SEED.filter(
+    (row) => !have.has(key(row.name)) && (only === undefined || only(row)),
+  ).map(
     (row): InventoryItem => ({
       id: nextId(),
       name: row.name,
@@ -108,3 +113,24 @@ export const addMissingSeedItems = (
   );
   return [...existing, ...additions];
 };
+
+/**
+ * The standing papers, and which of them the shop has not got a row for.
+ *
+ * A new size added to the seed reaches an existing shop only through this:
+ * `SEED` is not the source of truth once the database has rows of its own, so
+ * «Фото цаас 10x15» simply never appeared. Offering it on the Зарцуулалт
+ * screen, where the gap is noticed, beats sending somebody to Бараа to guess
+ * what to type.
+ */
+const PAPER_SEED = /^(бичгийн\s+цаас\s+[аa]4|фото)/iu;
+
+export const missingPaperNames = (existing: readonly InventoryItem[]): string[] => {
+  const have = new Set(existing.map((item) => key(item.name)));
+  return SEED.filter((row) => PAPER_SEED.test(row.name) && !have.has(key(row.name))).map(
+    (row) => row.name,
+  );
+};
+
+export const addMissingPapers = (existing: readonly InventoryItem[]): InventoryItem[] =>
+  addMissingSeedItems(existing, (row) => PAPER_SEED.test(row.name));

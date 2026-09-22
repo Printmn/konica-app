@@ -22,6 +22,8 @@ export const INVENTORY_DEFAULT: readonly InventoryItem[] = [
     { id: 11, name: 'Фото цаас А4 300гр (2 талтай)', price: '12,000₮', stock: '22', image: null, category: 'Цаас' },
     { id: 12, name: 'Фото цаас А3 (2 талтай)', price: '19,000₮', stock: '2', image: null, category: 'Цаас' },
     { id: 13, name: 'Фото шар А4', price: '5,500₮', stock: '2', image: null, category: 'Цаас' },
+    { id: 41, name: 'Фото цаас 10x15', price: '1,000₮', stock: '0', image: null, category: 'Цаас' },
+    { id: 42, name: 'Фото цаас 16x22', price: '2,500₮', stock: '0', image: null, category: 'Цаас' },
     { id: 14, name: 'Цагаан аяга', price: '2,200₮', stock: '0', image: null, category: 'Бусад' },
     { id: 15, name: 'Стикер цаас А4 гялгар', price: '11,000₮', stock: '0', image: null, category: 'Цаас' },
     { id: 16, name: 'Ламинатор А4', price: '27,000₮', stock: '0', image: null, category: 'Ламинатор' },
@@ -175,6 +177,7 @@ export const CALC_TYPES_DEFAULT: readonly CalcType[] = [
 
 export const TIME_SETTINGS_DEFAULT: TimeSettings = {
   startTime: '10:00',
+  endTime: '18:30',
   penaltyPerMin: 500,
   onTimeScore: 5,
   onLeaveScore: 3,

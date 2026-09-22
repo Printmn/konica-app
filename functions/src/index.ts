@@ -5,11 +5,13 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { setGlobalOptions } from 'firebase-functions/v2';
 
 import {
+  arrivalMessage,
   chatMessage,
   dueSoon,
   dueSoonMessage,
   lowStockMessage,
   newOrderMessage,
+  type AttendanceLog,
   type ChatMessage,
   type InventoryItem,
   type WorkLog,
@@ -87,6 +89,26 @@ export const onNewChatMessage = onValueCreated('/pmn/chat/{messageId}', async (e
     await notify(chatMessage(message), { exclude: message.deviceId });
   } catch (error) {
     console.error('onNewChatMessage failed', error);
+  }
+});
+
+/**
+ * Somebody clocked in.
+ *
+ * Managers only. The person who just tapped «Бүртгэх» watched it happen, and
+ * the counter iPad has no stake in who arrived when.
+ */
+export const onNewArrival = onValueCreated('/pmn/logs/{logId}', async (event) => {
+  try {
+    const log = event.data.val() as AttendanceLog | null;
+    if (log === null) return;
+
+    const message = arrivalMessage(log);
+    if (message === null) return;
+
+    await notify(message, { roles: ['manager', 'admin'] });
+  } catch (error) {
+    console.error('onNewArrival failed', error);
   }
 });
 

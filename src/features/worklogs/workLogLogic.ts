@@ -8,7 +8,7 @@ import type {
 } from '@/types';
 import { peekDeviceId } from '@/services/device/deviceId';
 import { nextId } from '@/utils/id';
-import { MONTH_NAMES_MN, shiftDate, todayString } from '@/utils/date';
+import { MONTH_NAMES_MN, nowTimeString, shiftDate, todayString } from '@/utils/date';
 import { parsePrice } from '@/utils/price';
 
 /**
@@ -22,7 +22,11 @@ import { parsePrice } from '@/utils/price';
 /** A blank form. Matches `wlFormInit` exactly, including the defaults. */
 export const emptyWorkLogForm = (): WorkLogForm => ({
   job: '',
-  receivedTime: '',
+  // Stamped, not blank. A job is booked at the counter with the customer
+  // standing there, so "now" is right virtually every time — and the one field
+  // nobody filled in was the one the board needed to say when work came in.
+  // Still editable: a parcel dropped off at lunch and booked at four is typed.
+  receivedTime: nowTimeString(),
   deadline: '',
   phone: '',
   delivery: '',
@@ -93,6 +97,89 @@ const newestFirst = (rows: readonly WorkLog[]): WorkLog[] =>
     const byNumber = (Number(b.no) || 0) - (Number(a.no) || 0);
     return byNumber !== 0 ? byNumber : b.id - a.id;
   });
+
+/**
+ * Everything finished and still on the shelf, oldest day first.
+ *
+ * «Болсон аваагүй» means the printing is done and the customer has not come
+ * back for it. The board stops carrying those forward — nothing more is owed at
+ * the press, so leaving them on today's column would bury the actual work — but
+ * that is exactly why they go missing: a job finished three weeks ago is behind
+ * an archive date nobody has a reason to open.
+ *
+ * Searched across the whole history rather than the visible board, because the
+ * question this answers is "what is stacked up waiting to be collected", and a
+ * parcel that has been waiting longest is the one worth chasing. Hence oldest
+ * first — the opposite of every other list here, and deliberately so.
+ */
+export const notPickedUp = (workLogs: readonly WorkLog[]): WorkLog[] =>
+  newestFirst(workLogs.filter((log) => log.status === 'Болсон аваагүй')).reverse();
+
+/**
+ * The three ways a job can still be hanging over the shop.
+ *
+ * Each names something unresolved, and each has its own way of disappearing
+ * from the board:
+ *
+ *  * `notPicked` — printed, not collected. The board stops carrying it forward
+ *    because no work is owed, which is precisely why it goes missing.
+ *  * `settlement` — handed over on account. Marked «Болсон», so it leaves the
+ *    board too, and what is left behind is money nobody is looking at.
+ *  * `tomorrow` — promised for another day. This one does stay on the board,
+ *    but mixed in with everything else booked since.
+ *
+ * All three are searched across the whole record rather than the visible
+ * board. A count that only covered the last few days would answer a question
+ * nobody is asking; «how much are we owed» has no date on it.
+ */
+export type BoardFilter = 'all' | 'notPicked' | 'settlement' | 'tomorrow';
+
+const MATCHES: Record<Exclude<BoardFilter, 'all'>, (log: WorkLog) => boolean> = {
+  notPicked: (log) => log.status === 'Болсон аваагүй',
+  // Either field can carry it: the status is set when the job is closed out,
+  // the payment status when it is booked, and the shop uses both.
+  settlement: (log) => log.status === 'Тооцоотой' || log.paymentStatus === 'Тооцоотой',
+  /**
+   * Promised for another day and not handed over yet.
+   *
+   * `isTomorrow` is set when a collection date is picked and is never cleared
+   * again — the job's *status* moves to «Болсон», the flag stays true forever.
+   * Matching on the flag alone therefore returned every job the shop had ever
+   * postponed, most of them collected weeks ago. What the chip is asked is
+   * "what have we promised and not delivered", so finished work is excluded.
+   */
+  tomorrow: (log) =>
+    !isFinished(log) && (log.status === 'Маргааш авна' || log.isTomorrow === true),
+};
+
+/**
+ * Everything matching one of the three, longest outstanding first.
+ *
+ * Oldest first is the opposite of the board, and deliberate: a parcel that has
+ * sat on the shelf for three weeks, or an invoice unpaid since June, is the one
+ * worth acting on. The newest of them will keep.
+ */
+export const filterBoard = (workLogs: readonly WorkLog[], filter: BoardFilter): WorkLog[] => {
+  if (filter === 'all') return [];
+  return newestFirst(workLogs.filter(MATCHES[filter])).reverse();
+};
+
+export interface BoardFilterCounts {
+  notPicked: number;
+  settlement: number;
+  tomorrow: number;
+}
+
+/** One pass for all three chips, so the header does not walk the record thrice. */
+export const boardFilterCounts = (workLogs: readonly WorkLog[]): BoardFilterCounts => {
+  const counts: BoardFilterCounts = { notPicked: 0, settlement: 0, tomorrow: 0 };
+  for (const log of workLogs) {
+    if (MATCHES.notPicked(log)) counts.notPicked += 1;
+    if (MATCHES.settlement(log)) counts.settlement += 1;
+    if (MATCHES.tomorrow(log)) counts.tomorrow += 1;
+  }
+  return counts;
+};
 
 /**
  * The board, cut into days.
@@ -346,6 +433,20 @@ export const quantityLabel = (log: Pick<WorkLog, 'quantity'>): string => {
   if (!Number.isFinite(count) || count <= 1) return '';
   return `×${count}`;
 };
+
+/** A job whose own name already ends in `(9ш)`, as quick orders write it. */
+const NAMES_ITS_COUNT = /\(\s*\d+\s*ш\s*\)\s*$/u;
+
+/**
+ * The quantity, unless the job title has already said it.
+ *
+ * `buildQuickOrder` bakes the count into the name — «Бичиг баримт канон (9ш)» —
+ * *and* stores it in `quantity`, so printing both gives «… (9ш) ×9». Harmless
+ * on a card with room to spare, but the archive row is one line and the second
+ * number is the thing that pushes the price off the end of it.
+ */
+export const countSuffix = (log: Pick<WorkLog, 'quantity' | 'job'>): string =>
+  NAMES_ITS_COUNT.test(log.job ?? '') ? '' : quantityLabel(log);
 
 /**
  * The handover deadline, as a person reads it.

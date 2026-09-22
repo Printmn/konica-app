@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, IconButton, SegmentedButtons, TextInput } from 'react-native-paper';
+import { Button, IconButton, TextInput } from 'react-native-paper';
 
 import { useAuth } from '@/authentication/AuthContext';
 import { EmptyState, PermissionDenied } from '@/components/feedback/StateViews';
@@ -13,7 +13,7 @@ import { useConfirmAction } from '@/hooks/useConfirmAction';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useToast } from '@/hooks/useToast';
 import { useAppTheme } from '@/theme/ThemeProvider';
-import type { Employee, HabitTask } from '@/types';
+import type { Employee } from '@/types';
 import { nextId } from '@/utils/id';
 import { DAY_LABELS_MN } from '@/utils/date';
 
@@ -64,18 +64,14 @@ export function AdminScreen(): React.JSX.Element {
   const { can } = useAuth();
   const { show } = useToast();
   const { gutter } = useResponsive();
-  const { employees, setEmployees, tasks, setTasks } = useData();
+  const { employees, setEmployees } = useData();
 
-  const [tab, setTab] = useState<'employees' | 'habits'>('employees');
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
   const [restDays, setRestDays] = useState<number[]>([2]);
   const [error, setError] = useState('');
   /** Reveals the per-weekday chips for a rota the two presets do not cover. */
   const [customDays, setCustomDays] = useState(false);
-
-  const [habitText, setHabitText] = useState('');
-  const [habitScore, setHabitScore] = useState(2);
 
   const { armedId, confirm } = useConfirmAction();
 
@@ -125,31 +121,6 @@ export function AdminScreen(): React.JSX.Element {
     [confirm, setEmployees, show],
   );
 
-  const addHabit = useCallback(() => {
-    if (!habitText.trim()) return;
-    const habit: HabitTask = {
-      id: nextId(),
-      text: habitText.trim(),
-      done: false,
-      type: 'habit',
-      score: habitScore,
-    };
-    setTasks((previous) => [...previous, habit]);
-    setHabitText('');
-    setHabitScore(2);
-    show('Дадал нэмэгдлээ', 'success');
-  }, [habitText, habitScore, setTasks, show]);
-
-  const removeHabit = useCallback(
-    (id: number) => {
-      confirm(id, (confirmedId) => {
-        setTasks((previous) => previous.filter((task) => task.id !== confirmedId));
-        show('Устгалаа');
-      });
-    },
-    [confirm, setTasks, show],
-  );
-
   if (!can('viewAdmin')) {
     return (
       <Screen>
@@ -164,17 +135,7 @@ export function AdminScreen(): React.JSX.Element {
       <ScreenHeader
         title="Админ панел"
         onBack={() => navigation.goBack()}
-        right={
-          <Button
-            mode="text"
-            compact
-            textColor="#ffffff"
-            icon="cog"
-            onPress={() => navigation.navigate('Settings' as never)}
-          >
-            Тохиргоо
-          </Button>
-        }
+        subtitle="Ажилтны нэр, PIN, амрах өдөр"
       />
 
       <ScrollView
@@ -182,260 +143,193 @@ export function AdminScreen(): React.JSX.Element {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <SegmentedButtons
-          value={tab}
-          onValueChange={(value) => setTab(value)}
-          density="small"
-          buttons={[
-            { value: 'employees', label: '👤 Ажилтан' },
-            { value: 'habits', label: '📋 Дадал тохиргоо' },
-          ]}
-        />
 
-        {tab === 'employees' ? (
-          <>
-            {can('manageEmployees') ? (
-              <Card style={styles.card}>
-                <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-                  Ажилтан нэмэх
+          {can('manageEmployees') ? (
+            <Card style={styles.card}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
+                Ажилтан нэмэх
+              </Text>
+
+              <TextInput
+                mode="outlined"
+                placeholder="Нэр (жш: Болд)"
+                value={name}
+                onChangeText={(value) => {
+                  setName(value);
+                  setError('');
+                }}
+                dense
+              />
+              <TextInput
+                mode="outlined"
+                placeholder="4 оронтой PIN (жш: 1234)"
+                value={pin}
+                onChangeText={(value) => {
+                  setPin(value.replace(/\D/g, '').slice(0, 4));
+                  setError('');
+                }}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                dense
+              />
+
+              <Text style={[styles.label, { color: theme.custom.mutedText }]}>
+                📝 Амрах хуваарь:
+              </Text>
+
+              <View style={styles.row}>
+                {REST_PRESETS.map((preset) => {
+                  const active = sameDays(restDays, preset.days);
+                  return (
+                    <Pressable
+                      key={preset.label}
+                      onPress={() => {
+                        setRestDays(preset.days);
+                        setCustomDays(false);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      style={({ pressed }) => [
+                        styles.preset,
+                        {
+                          borderColor: active ? REST_ACCENT : theme.custom.subtleBorder,
+                          backgroundColor: active
+                            ? REST_ACCENT_SOFT
+                            : theme.colors.surfaceVariant,
+                        },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.presetLabel,
+                          { color: active ? REST_ACCENT : theme.custom.mutedText },
+                        ]}
+                      >
+                        {preset.label}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.presetHint,
+                          { color: active ? REST_ACCENT : theme.custom.mutedText },
+                        ]}
+                      >
+                        {preset.hint}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* The two rotas above cover the shop, but a one-off pattern
+                  still has to be possible — it just should not be in the way. */}
+              <Pressable
+                onPress={() => setCustomDays((previous) => !previous)}
+                accessibilityRole="button"
+                hitSlop={8}
+              >
+                <Text style={[styles.toggle, { color: theme.colors.primary }]}>
+                  {customDays ? '▲ Хаах' : '▼ Өөрөө сонгох'}
                 </Text>
+              </Pressable>
 
-                <TextInput
-                  mode="outlined"
-                  placeholder="Нэр (жш: Болд)"
-                  value={name}
-                  onChangeText={(value) => {
-                    setName(value);
-                    setError('');
-                  }}
-                  dense
-                />
-                <TextInput
-                  mode="outlined"
-                  placeholder="4 оронтой PIN (жш: 1234)"
-                  value={pin}
-                  onChangeText={(value) => {
-                    setPin(value.replace(/\D/g, '').slice(0, 4));
-                    setError('');
-                  }}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  secureTextEntry
-                  dense
-                />
-
-                <Text style={[styles.label, { color: theme.custom.mutedText }]}>
-                  📝 Амрах хуваарь:
-                </Text>
-
-                <View style={styles.row}>
-                  {REST_PRESETS.map((preset) => {
-                    const active = sameDays(restDays, preset.days);
+              {customDays ? (
+                <View style={styles.dayRow}>
+                  {DAY_LABELS_MN.map((label, index) => {
+                    const active = restDays.includes(index);
                     return (
                       <Pressable
-                        key={preset.label}
-                        onPress={() => {
-                          setRestDays(preset.days);
-                          setCustomDays(false);
-                        }}
+                        key={label}
+                        onPress={() => toggleRestDay(index)}
                         accessibilityRole="button"
                         accessibilityState={{ selected: active }}
-                        style={({ pressed }) => [
-                          styles.preset,
+                        style={[
+                          styles.dayChip,
                           {
                             borderColor: active ? REST_ACCENT : theme.custom.subtleBorder,
                             backgroundColor: active
                               ? REST_ACCENT_SOFT
-                              : theme.colors.surfaceVariant,
+                              : theme.custom.cardBackground,
                           },
-                          pressed && styles.pressed,
                         ]}
                       >
                         <Text
                           style={[
-                            styles.presetLabel,
+                            styles.dayChipText,
                             { color: active ? REST_ACCENT : theme.custom.mutedText },
                           ]}
                         >
-                          {preset.label}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.presetHint,
-                            { color: active ? REST_ACCENT : theme.custom.mutedText },
-                          ]}
-                        >
-                          {preset.hint}
+                          {label}
                         </Text>
                       </Pressable>
                     );
                   })}
                 </View>
+              ) : null}
 
-                {/* The two rotas above cover the shop, but a one-off pattern
-                    still has to be possible — it just should not be in the way. */}
-                <Pressable
-                  onPress={() => setCustomDays((previous) => !previous)}
-                  accessibilityRole="button"
-                  hitSlop={8}
-                >
-                  <Text style={[styles.toggle, { color: theme.colors.primary }]}>
-                    {customDays ? '▲ Хаах' : '▼ Өөрөө сонгох'}
-                  </Text>
-                </Pressable>
+              {error ? <Text style={styles.error}>{error}</Text> : null}
 
-                {customDays ? (
-                  <View style={styles.dayRow}>
-                    {DAY_LABELS_MN.map((label, index) => {
-                      const active = restDays.includes(index);
-                      return (
-                        <Pressable
-                          key={label}
-                          onPress={() => toggleRestDay(index)}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: active }}
-                          style={[
-                            styles.dayChip,
-                            {
-                              borderColor: active ? REST_ACCENT : theme.custom.subtleBorder,
-                              backgroundColor: active
-                                ? REST_ACCENT_SOFT
-                                : theme.custom.cardBackground,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.dayChipText,
-                              { color: active ? REST_ACCENT : theme.custom.mutedText },
-                            ]}
-                          >
-                            {label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ) : null}
-
-                {error ? <Text style={styles.error}>{error}</Text> : null}
-
-                <Button mode="contained" onPress={addEmployee} style={styles.addButton}>
-                  + Нэмэх
-                </Button>
-              </Card>
-            ) : null}
-
-            {employees.length === 0 ? (
-              <EmptyState
-                icon="👤"
-                title="Ажилтан бүртгэгдээгүй байна"
-                hint="Дээрх формоор нэмнэ үү"
-              />
-            ) : (
-              employees.map((employee) => {
-                const armed = armedId === employee.id;
-                return (
-                  <Card key={employee.id} accentColor={armed ? '#dc2626' : undefined}>
-                    <View style={styles.listRow}>
-                      <View
-                        style={[styles.avatar, { backgroundColor: theme.colors.surfaceVariant }]}
-                      >
-                        <Text style={[styles.avatarText, { color: theme.colors.primary }]}>
-                          {employee.name.trim().charAt(0).toUpperCase() || '?'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.flex}>
-                        <Text style={[styles.itemTitle, { color: theme.colors.onSurface }]}>
-                          {employee.name}
-                        </Text>
-                        {/* The PIN is masked: a roster left open on the counter
-                            should not hand out everyone's login. */}
-                        <Text style={[styles.itemMeta, { color: theme.custom.mutedText }]}>
-                          PIN: {'●'.repeat(employee.pin.length || 4)}
-                        </Text>
-                        <Text style={[styles.itemRest, { color: REST_ACCENT }]}>
-                          😴 {restLabel(employee.restDays)}
-                        </Text>
-                      </View>
-
-                      {can('manageEmployees') ? (
-                        <IconButton
-                          icon={armed ? 'trash-can' : 'trash-can-outline'}
-                          size={20}
-                          iconColor="#dc2626"
-                          style={styles.trash}
-                          accessibilityLabel={
-                            armed ? `${employee.name} устгахыг батлах` : `${employee.name} устгах`
-                          }
-                          onPress={() => removeEmployee(employee.id)}
-                        />
-                      ) : null}
-                    </View>
-                  </Card>
-                );
-              })
-            )}
-          </>
-        ) : (
-          <>
-            <Card style={styles.card}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-                Дадал нэмэх
-              </Text>
-              <TextInput
-                mode="outlined"
-                label="Дадлын нэр"
-                value={habitText}
-                onChangeText={setHabitText}
-                dense
-              />
-              <View style={styles.row}>
-                {[1, 2, 3, 4, 5].map((score) => (
-                  <Button
-                    key={score}
-                    mode={habitScore === score ? 'contained' : 'outlined'}
-                    onPress={() => setHabitScore(score)}
-                    compact
-                    style={styles.flex}
-                  >
-                    {score}⭐
-                  </Button>
-                ))}
-              </View>
-              <Button mode="contained" onPress={addHabit} disabled={!habitText.trim()}>
+              <Button mode="contained" onPress={addEmployee} style={styles.addButton}>
                 + Нэмэх
               </Button>
             </Card>
+          ) : null}
 
-            {tasks.map((task) => (
-              <Card key={task.id}>
-                <View style={styles.listRow}>
-                  <Text style={styles.habitIcon}>
-                    {task.type === 'cleaning' ? '🧹' : '⚡'}
-                  </Text>
-                  <View style={styles.flex}>
-                    <Text style={[styles.itemTitle, { color: theme.colors.onSurface }]}>
-                      {task.text}
-                    </Text>
-                    <Text style={[styles.itemMeta, { color: theme.custom.mutedText }]}>
-                      {task.score || 1} оноо
-                    </Text>
+          {employees.length === 0 ? (
+            <EmptyState
+              icon="👤"
+              title="Ажилтан бүртгэгдээгүй байна"
+              hint="Дээрх формоор нэмнэ үү"
+            />
+          ) : (
+            employees.map((employee) => {
+              const armed = armedId === employee.id;
+              return (
+                <Card key={employee.id} accentColor={armed ? '#dc2626' : undefined}>
+                  <View style={styles.listRow}>
+                    <View
+                      style={[styles.avatar, { backgroundColor: theme.colors.surfaceVariant }]}
+                    >
+                      <Text style={[styles.avatarText, { color: theme.colors.primary }]}>
+                        {employee.name.trim().charAt(0).toUpperCase() || '?'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.flex}>
+                      <Text style={[styles.itemTitle, { color: theme.colors.onSurface }]}>
+                        {employee.name}
+                      </Text>
+                      {/* Shown rather than masked. This screen is reachable
+                          only by a signed-in manager, and a PIN nobody can look
+                          up is a PIN that gets reset every time somebody
+                          forgets it — which is how three people end up sharing
+                          one. «—» means the row predates PINs. */}
+                      <Text style={[styles.itemPin, { color: theme.colors.primary }]}>
+                        PIN: {employee.pin || '—'}
+                      </Text>
+                      <Text style={[styles.itemRest, { color: REST_ACCENT }]}>
+                        😴 {restLabel(employee.restDays)}
+                      </Text>
+                    </View>
+
+                    {can('manageEmployees') ? (
+                      <IconButton
+                        icon={armed ? 'trash-can' : 'trash-can-outline'}
+                        size={20}
+                        iconColor="#dc2626"
+                        style={styles.trash}
+                        accessibilityLabel={
+                          armed ? `${employee.name} устгахыг батлах` : `${employee.name} устгах`
+                        }
+                        onPress={() => removeEmployee(employee.id)}
+                      />
+                    ) : null}
                   </View>
-                  <Button
-                    mode="text"
-                    compact
-                    textColor={theme.colors.error}
-                    onPress={() => removeHabit(task.id)}
-                  >
-                    {armedId === task.id ? 'Устгах?' : 'Устгах'}
-                  </Button>
-                </View>
-              </Card>
-            ))}
-          </>
-        )}
+                </Card>
+              );
+            })
+          )}
       </ScrollView>
     </Screen>
   );
@@ -486,6 +380,7 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 16, fontWeight: '900' },
   itemTitle: { fontSize: 14, fontWeight: '800' },
+  itemPin: { fontSize: 14, fontWeight: '900', letterSpacing: 2, marginTop: 2 },
   itemMeta: { fontSize: 11, marginTop: 2 },
   itemRest: { fontSize: 11, fontWeight: '700', marginTop: 2 },
   trash: { margin: 0 },

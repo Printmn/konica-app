@@ -60,3 +60,40 @@ describe('isOwnMessage', () => {
     expect(isOwnMessage(message({ sender: 'менежер' }), 'device-b', 'Менежер')).toBe(false);
   });
 });
+
+/**
+ * Two people signed in under the same display name used to see each other's
+ * messages as their own — right-aligned, with a delete button on them. The
+ * shared worker PIN made that easy to hit: sign in without typing a name and
+ * everybody is «Ажилтан».
+ */
+describe('isOwnMessage does not trust a name two people can share', () => {
+  it('claims what this device sent', () => {
+    expect(
+      isOwnMessage(message({ sender: 'Ажилтан', deviceId: 'phone-A' }), 'phone-A', 'Ажилтан'),
+    ).toBe(true);
+  });
+
+  it('does not claim another handset signed in as the generic «Ажилтан»', () => {
+    // Two nameless worker sessions are two people wearing one name. Each used
+    // to see the other's messages as their own, with a delete button on them.
+    expect(
+      isOwnMessage(message({ sender: 'Ажилтан', deviceId: 'phone-B' }), 'phone-A', 'Ажилтан'),
+    ).toBe(false);
+  });
+
+  it('still trusts a real name across devices — a reinstall keeps its history', () => {
+    expect(isOwnMessage(message({ sender: 'Бат', deviceId: 'old' }), 'new', 'Бат')).toBe(true);
+  });
+
+  it('will not claim a nameless legacy row either', () => {
+    // «Ажилтан» with no device id identifies nobody at all.
+    expect(
+      isOwnMessage(message({ sender: 'Ажилтан', deviceId: '' }), 'phone-A', 'Ажилтан'),
+    ).toBe(false);
+  });
+
+  it('claims nothing on a device with no id and no name', () => {
+    expect(isOwnMessage(message({ sender: 'Ажилтан', deviceId: '' }), '', '')).toBe(false);
+  });
+});

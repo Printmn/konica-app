@@ -22,6 +22,10 @@ import {
   imageForJob,
   productImageMap,
   quantityLabel,
+  boardFilterCounts,
+  countSuffix,
+  filterBoard,
+  notPickedUp,
   unitPriceOf,
   visibleWorkLogs,
   workLogToForm,
@@ -338,6 +342,133 @@ describe('visibleWorkLogs', () => {
 
   it('shows exactly one day when an archive date is chosen', () => {
     expect(visibleWorkLogs(logs, '2026-08-03', '2026-08-04').map((l) => l.id)).toEqual([3, 2]);
+  });
+});
+
+/**
+ * The pickup shelf.
+ *
+ * These are the jobs the board is right to stop carrying forward — the work is
+ * done — and wrong to make unfindable. Anything the shop has printed and not
+ * handed over belongs here regardless of how long ago it was.
+ */
+/**
+ * `buildQuickOrder` writes the count into the job name *and* into `quantity`,
+ * so a naive row prints it twice. On a one-line archive row the second number
+ * is what pushes the price off the end.
+ */
+describe('countSuffix', () => {
+  it('stays quiet when the job name already carries the count', () => {
+    expect(countSuffix(log({ job: 'Бичиг баримт канон (9ш)', quantity: 9 }))).toBe('');
+    expect(countSuffix(log({ job: 'Цээж зураг ( 12 ш )', quantity: 12 }))).toBe('');
+  });
+
+  it('still prints a quantity the name never mentions', () => {
+    expect(countSuffix(log({ job: 'Нэрийн хуудас', quantity: 250 }))).toBe('×250');
+  });
+
+  it('ignores a count that is not the end of the name', () => {
+    // «(10ш дээш)» is a price band, not this job's quantity.
+    expect(countSuffix(log({ job: 'Өргөмжлөл А4 (10ш дээш)', quantity: 3 }))).toBe('×3');
+  });
+
+  it('says nothing for a single item, as before', () => {
+    expect(countSuffix(log({ job: 'Хэвлэл', quantity: 1 }))).toBe('');
+  });
+});
+
+/**
+ * The three chips. Each names something unresolved, and each has its own way of
+ * falling off the board — which is the reason they are searched across the
+ * whole record rather than the visible day.
+ */
+describe('the board filters', () => {
+  const logs = [
+    log({ id: 1, date: '2026-08-24', status: '' }),
+    log({ id: 2, date: '2026-08-24', status: 'Болсон аваагүй' }),
+    log({ id: 3, date: '2026-06-02', status: 'Болсон аваагүй' }),
+    log({ id: 4, date: '2026-07-15', status: 'Болсон', paymentStatus: 'Тооцоотой' }),
+    log({ id: 5, date: '2026-08-23', status: 'Тооцоотой' }),
+    log({ id: 6, date: '2026-08-23', status: 'Маргааш авна' }),
+    log({ id: 7, date: '2026-08-22', status: '', isTomorrow: true }),
+    // Promised for another day back in May, collected long since. The flag is
+    // never cleared, so only the status says so.
+    log({ id: 8, date: '2026-05-11', status: 'Болсон', isTomorrow: true }),
+  ];
+
+  it('finds what is printed and uncollected', () => {
+    expect(filterBoard(logs, 'notPicked').map((l) => l.id)).toEqual([3, 2]);
+  });
+
+  it('counts a settlement whichever field carries it', () => {
+    // Set on the status when the job is closed out, on the payment status when
+    // it is booked. The shop uses both, so both have to match.
+    expect(filterBoard(logs, 'settlement').map((l) => l.id)).toEqual([4, 5]);
+  });
+
+  it('treats the old isTomorrow flag as «Маргааш авна»', () => {
+    expect(filterBoard(logs, 'tomorrow').map((l) => l.id)).toEqual([7, 6]);
+  });
+
+  it('drops a postponed job once it has actually been handed over', () => {
+    // `isTomorrow` is set when a date is picked and never cleared again, so
+    // matching the flag alone returned every job the shop had ever postponed.
+    expect(filterBoard(logs, 'tomorrow').map((l) => l.id)).not.toContain(8);
+    expect(boardFilterCounts(logs).tomorrow).toBe(2);
+  });
+
+  it('puts the longest outstanding first, unlike the board', () => {
+    expect(filterBoard(logs, 'notPicked')[0]?.date).toBe('2026-06-02');
+  });
+
+  it('reaches past the board, which drops closed work after its own day', () => {
+    const board = visibleWorkLogs(logs, null, '2026-08-24').map((l) => l.id);
+    expect(board).not.toContain(3); // June, collected by nobody
+    expect(board).not.toContain(4); // July, handed over on account
+    expect(filterBoard(logs, 'notPicked').map((l) => l.id)).toContain(3);
+    expect(filterBoard(logs, 'settlement').map((l) => l.id)).toContain(4);
+  });
+
+  it('leaves the day’s board to visibleWorkLogs', () => {
+    expect(filterBoard(logs, 'all')).toEqual([]);
+  });
+
+  it('counts all three in one pass', () => {
+    expect(boardFilterCounts(logs)).toEqual({ notPicked: 2, settlement: 2, tomorrow: 2 });
+  });
+
+  it('counts a job that is both, under both', () => {
+    const both = [log({ id: 1, status: 'Болсон аваагүй', paymentStatus: 'Тооцоотой' })];
+    expect(boardFilterCounts(both)).toEqual({ notPicked: 1, settlement: 1, tomorrow: 0 });
+  });
+});
+
+describe('notPickedUp', () => {
+  const logs = [
+    log({ id: 1, date: '2026-08-04', status: 'Болсон аваагүй' }),
+    log({ id: 2, date: '2026-08-04', status: 'Болсон' }),
+    log({ id: 3, date: '2026-07-12', status: 'Болсон аваагүй' }),
+    log({ id: 4, date: '2026-08-03', status: '' }),
+    log({ id: 5, date: '2026-08-03', status: 'Маргааш авна' }),
+  ];
+
+  it('collects only what is finished and uncollected', () => {
+    expect(notPickedUp(logs).map((l) => l.id)).toEqual([3, 1]);
+  });
+
+  it('puts the longest wait first, unlike every other list', () => {
+    const [first] = notPickedUp(logs);
+    expect(first?.date).toBe('2026-07-12');
+  });
+
+  it('reaches past the board, which drops finished work after its own day', () => {
+    // Nothing in `visibleWorkLogs` would ever show the July job again.
+    expect(visibleWorkLogs(logs, null, '2026-08-04').map((l) => l.id)).not.toContain(3);
+    expect(notPickedUp(logs).map((l) => l.id)).toContain(3);
+  });
+
+  it('is empty when the shelf is clear', () => {
+    expect(notPickedUp([log({ id: 9, status: 'Болсон' })])).toEqual([]);
   });
 });
 

@@ -5,6 +5,7 @@ import { OfflineBanner, SyncErrorBanner, PermissionDenied } from '@/components/f
 import { Screen } from '@/components/layout/Screen';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { useData } from '@/features/data/DataContext';
+import { syncPaperUsage } from '@/features/inventory/stockUsage';
 import { buildQuickOrder } from '@/features/orders/orderLogic';
 import { useScreenBack } from '@/hooks/useScreenBack';
 import { useToast } from '@/hooks/useToast';
@@ -28,10 +29,22 @@ const SUBMIT_LOCK_MS = 1200;
 export function QuickPrintScreen(): React.JSX.Element {
   const onBack = useScreenBack();
   const { show } = useToast();
-  const { can } = useAuth();
+  const { can, role } = useAuth();
 
-  const { workLogs, setWorkLogs, setOrders, services, isOffline, pendingWrites, syncError, syncNow } =
-    useData();
+  const {
+    workLogs,
+    setWorkLogs,
+    setOrders,
+    services,
+    inventory,
+    setInventory,
+    usage,
+    setUsage,
+    isOffline,
+    pendingWrites,
+    syncError,
+    syncNow,
+  } = useData();
 
   /** Guards against a double tap booking the same job twice. */
   const submitting = useRef(false);
@@ -47,10 +60,32 @@ export function QuickPrintScreen(): React.JSX.Element {
       const { order, workLog } = buildQuickOrder(draft, workLogs);
       setOrders((previous) => [order, ...previous]);
       setWorkLogs((previous) => [workLog, ...previous]);
+
+      // The counter books paper through this sheet as readily as through the
+      // order form, and stock that only came down on one of the two routes
+      // would drift by exactly the amount sold at the counter — the busiest
+      // route of the two.
+      const paper = syncPaperUsage(
+        usage,
+        inventory,
+        workLog.id,
+        { job: workLog.job, quantity: workLog.quantity, date: workLog.date },
+        role ?? '',
+      );
+      if (paper.drawn !== null) {
+        setUsage(() => paper.usage);
+        setInventory(() => paper.inventory);
+      }
+
       void notifyNewOrder(workLog);
-      show(`${workLog.job} — ${formatCurrency(order.price)}`, 'success');
+      show(
+        paper.drawn === null
+          ? `${workLog.job} — ${formatCurrency(order.price)}`
+          : `${workLog.job} — ${formatCurrency(order.price)} · ${paper.drawn.sheets}ш хасагдлаа`,
+        'success',
+      );
     },
-    [workLogs, setOrders, setWorkLogs, show],
+    [workLogs, setOrders, setWorkLogs, usage, inventory, setUsage, setInventory, role, show],
   );
 
   if (!can('viewOrders')) {

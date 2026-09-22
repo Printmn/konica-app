@@ -95,13 +95,39 @@ const byTime = (a: ChatMessage, b: ChatMessage): number => a.at - b.at;
  * the same limitation the shared PINs impose everywhere else, and giving each
  * worker their own employee record resolves it.
  */
+/**
+ * Display names that more than one person can hold at the same time.
+ *
+ * `roleLabel` gives a nameless worker session «Ажилтан». Two people signed in
+ * that way are two different people wearing one name, so the name fallback
+ * below must not treat their messages as interchangeable — it did, and each
+ * saw the other's messages as their own, right-aligned and with a delete
+ * button on them.
+ *
+ * Signing in without a name is no longer possible (the shared worker PIN now
+ * insists on one), so this only has to cover sessions that predate that.
+ */
+const AMBIGUOUS_NAMES = new Set(['ажилтан', 'тодорхойгүй', '']);
+
+/**
+ * Whether this message came from the person now holding the phone.
+ *
+ * The device id settles it when it matches. When it does not, the name is
+ * still consulted — and has to be: a reinstall mints a fresh device id, and a
+ * second phone has one of its own, but in both cases your own history is
+ * still yours. Losing that was the original bug this function was written for.
+ *
+ * The name is only trusted when it names somebody. A generic label shared by
+ * two nameless sessions identifies no one.
+ */
 export const isOwnMessage = (
   message: ChatMessage,
   deviceId: string,
   displayName: string,
 ): boolean => {
   if (deviceId !== '' && message.deviceId === deviceId) return true;
-  return displayName !== '' && message.sender === displayName;
+  if (AMBIGUOUS_NAMES.has(displayName.trim().toLowerCase())) return false;
+  return message.sender === displayName;
 };
 
 /** Newest `CHAT_HISTORY_LIMIT`, de-duplicated by id, oldest first. */

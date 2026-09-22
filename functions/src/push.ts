@@ -19,7 +19,7 @@ export interface PushMessage {
   title: string;
   body: string;
   /** Android notification channel; must match the ones the app creates. */
-  channelId: 'orders' | 'stock' | 'chat' | 'deadline';
+  channelId: 'orders' | 'stock' | 'chat' | 'deadline' | 'attendance';
   data?: Record<string, string>;
 }
 

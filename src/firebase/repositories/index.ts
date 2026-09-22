@@ -9,10 +9,13 @@ import {
 } from '@/constants/catalogDefaults';
 import { STORAGE_KEYS } from '@/constants/storageKeys';
 import type {
+  Announcement,
   AttendanceLog,
   CalcType,
   ColorLabel,
   Employee,
+  Expense,
+  StockUsage,
   HabitTask,
   InventoryItem,
   Order,
@@ -23,9 +26,12 @@ import type {
 
 import { BaseRepository, isObjectRecord } from './BaseRepository';
 import {
+  isAnnouncement,
   isAttendanceLog,
   isEmployee,
+  isExpense,
   isHabitTask,
+  isStockUsage,
   isInventoryItem,
   isOrder,
   isServiceItem,
@@ -159,6 +165,33 @@ export const tasksRepository = new RecordRepository<HabitTask>(
   [...TASKS_DEFAULT],
   isHabitTask,
   migrateTasks,
+);
+
+/**
+ * The day's spending. No defaults: an empty list is the correct starting
+ * state, unlike the catalogs which ship with the shop's real price list.
+ */
+export const expensesRepository = new RecordRepository<Expense>(
+  'expenses',
+  STORAGE_KEYS.expenses,
+  [],
+  isExpense,
+);
+
+/** Notices the manager posts for the shop. */
+export const announcementsRepository = new RecordRepository<Announcement>(
+  'announcements',
+  STORAGE_KEYS.announcements,
+  [],
+  isAnnouncement,
+);
+
+/** Sheets drawn off the shelf. Empty is the correct starting state. */
+export const usageRepository = new RecordRepository<StockUsage>(
+  'usage',
+  STORAGE_KEYS.usage,
+  [],
+  isStockUsage,
 );
 
 export { BaseRepository } from './BaseRepository';

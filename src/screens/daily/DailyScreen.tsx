@@ -1,7 +1,6 @@
-import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Checkbox, Icon, Modal, Portal, TextInput } from 'react-native-paper';
+import { Button, Modal, Portal, ProgressBar, TextInput } from 'react-native-paper';
 
 import { useAuth } from '@/authentication/AuthContext';
 import { EmptyState, OfflineBanner, SyncErrorBanner } from '@/components/feedback/StateViews';
@@ -9,21 +8,22 @@ import { Screen } from '@/components/layout/Screen';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { TimeField } from '@/components/ui/TimeField';
-import { ARRIVE_TASK_ID } from '@/constants/config';
-import {
-  registerArrival,
-  totalPossibleScore,
-  validateArrival,
-} from '@/features/attendance/attendanceLogic';
+
 import { useData } from '@/features/data/DataContext';
+import { DEFAULT_END } from '@/features/attendance/clockInReminders';
+import { calculatePerformance } from '@/features/performance/bonusCalculator';
+
+import { AttendanceChartCard } from './components/AttendanceChartCard';
 import { useScreenBack } from '@/hooks/useScreenBack';
 import { useConfirmAction } from '@/hooks/useConfirmAction';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useToast } from '@/hooks/useToast';
 import { useAppTheme } from '@/theme/ThemeProvider';
-import type { HabitTask } from '@/types';
-import { nextId } from '@/utils/id';
-import { nowTimeString } from '@/utils/date';
+import { formatCurrency } from '@/utils/price';
+import { currentMonthString, monthLabel } from '@/utils/date';
+
+import { ArrivalCard } from './components/ArrivalCard';
+import { HabitAdminCard } from './components/HabitAdminCard';
 
 /**
  * Attendance and habits.
@@ -44,7 +44,6 @@ export function DailyScreen(): React.JSX.Element {
   const {
     employees,
     tasks,
-    setTasks,
     attendanceLogs,
     setAttendanceLogs,
     timeSettings,
@@ -55,143 +54,42 @@ export function DailyScreen(): React.JSX.Element {
     syncNow,
   } = useData();
 
-  const [name, setName] = useState(role === 'worker' && workerName ? workerName : '');
-  const [arrivalTime, setArrivalTime] = useState(nowTimeString());
-  const [doneTaskIds, setDoneTaskIds] = useState<number[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [newTaskText, setNewTaskText] = useState('');
-  const [newTaskScore, setNewTaskScore] = useState(2);
-  const { armedId, confirm } = useConfirmAction();
-  /** Same double-tap guard as the order form; two arrivals would double-score. */
-  const submitting = useRef(false);
-  /** Set once the clerk edits the time, so refocusing does not undo their entry. */
-  const timeEdited = useRef(false);
-
-  /**
-   * Re-reads the clock every time the screen comes forward.
-   *
-   * The field was seeded once, at mount. Tab screens stay alive, so someone who
-   * opened the app at 09:00 and came back to register at 10:15 was still shown
-   * 09:00 — and a late arrival was recorded as on time. Since these scores feed
-   * the monthly bonus, a stale default here quietly changes what people are
-   * paid. A manual edit is left alone.
-   */
-  useFocusEffect(
-    useCallback(() => {
-      if (!timeEdited.current) setArrivalTime(nowTimeString());
-    }, []),
-  );
-
-  const changeArrivalTime = useCallback((value: string) => {
-    timeEdited.current = true;
-    setArrivalTime(value);
-  }, []);
-
-  const dailyMax = useMemo(() => totalPossibleScore(tasks), [tasks]);
-  const earned = useMemo(
-    () =>
-      doneTaskIds.reduce((sum, id) => {
-        const task = tasks.find((candidate) => candidate.id === id);
-        return sum + (task ? task.score || 1 : 0);
-      }, 0),
-    [doneTaskIds, tasks],
-  );
-
   const canManageHabits = can('manageHabits');
-  /** A logged-in worker can only ever register themselves. */
-  const isOwnName = role === 'worker' && workerName !== '';
+  const canViewScores = can('viewScores');
+
+  /** Only a person signed in as themselves may record an arrival. */
+  const canRegister = role === 'worker';
+
+  const { armedId, confirm } = useConfirmAction();
 
   /**
-   * Quick picks around the configured shift start. Registering an arrival is
-   * overwhelmingly "on time" or "a few minutes late", so those are one tap.
+   * This month's bonus, alongside the habits that earn it.
+   *
+   * It used to live on a screen of its own that nobody could reach. Ticking a
+   * habit and seeing what that habit is worth belong on the same screen —
+   * splitting them made the score feel arbitrary.
    */
-  const arrivalPresets = useMemo(() => {
-    const start = timeSettings.startTime;
-    const [h, m] = start.split(':').map(Number);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) return [start];
-    const shift = (minutes: number): string => {
-      const total = (h ?? 0) * 60 + (m ?? 0) + minutes;
-      const hh = Math.floor(((total % 1440) + 1440) % 1440 / 60);
-      const mm = ((total % 60) + 60) % 60;
-      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-    };
-    return [shift(-15), start, shift(15), shift(30)];
-  }, [timeSettings.startTime]);
-
-  const toggleTask = useCallback((id: number) => {
-    setDoneTaskIds((previous) =>
-      previous.includes(id)
-        ? previous.filter((candidate) => candidate !== id)
-        : [...previous, id],
-    );
-  }, []);
-
-  const submit = useCallback(() => {
-    if (submitting.current) return;
-
-    const error = validateArrival(name, arrivalTime);
-    if (error) {
-      show(error, 'error');
-      return;
-    }
-
-    submitting.current = true;
-    setTimeout(() => {
-      submitting.current = false;
-    }, 1200);
-
-    const { log, nextDoneTaskIds, isLate } = registerArrival({
-      name: name.trim(),
-      arrivalTime,
-      doneTaskIds,
-      tasks,
-      timeSettings,
-    });
-
-    setAttendanceLogs((previous) => [log, ...previous]);
-
-    // Reflect the auto-tick in the habit list, exactly as the web build did.
-    if (!isLate) {
-      setTasks((previous) =>
-        previous.map((task) =>
-          task.id === ARRIVE_TASK_ID ? { ...task, done: true } : task,
-        ),
-      );
-    }
-
-    setDoneTaskIds(nextDoneTaskIds);
-    timeEdited.current = false;
-    setArrivalTime(nowTimeString());
-    if (role !== 'worker') setName('');
-    show(
-      isLate ? `${log.status} — бүртгэгдлээ` : 'Цагтаа ирсэн — бүртгэгдлээ',
-      isLate ? 'error' : 'success',
-    );
-  }, [
-    name,
-    arrivalTime,
-    doneTaskIds,
-    tasks,
-    timeSettings,
-    role,
-    setAttendanceLogs,
-    setTasks,
-    show,
-  ]);
-
-  const addTask = useCallback(() => {
-    if (!newTaskText.trim()) return;
-    const task: HabitTask = {
-      id: nextId(),
-      text: newTaskText.trim(),
-      done: false,
-      type: 'habit',
-      score: newTaskScore,
-    };
-    setTasks((previous) => [...previous, task]);
-    setNewTaskText('');
-    setNewTaskScore(2);
-  }, [newTaskText, newTaskScore, setTasks]);
+  const month = currentMonthString();
+  const performance = useMemo(
+    () =>
+      calculatePerformance({
+        month,
+        attendanceLogs,
+        employees,
+        tasks,
+        maxBonus: timeSettings.maxBonus,
+      }),
+    [month, attendanceLogs, employees, tasks, timeSettings.maxBonus],
+  );
+  /** A worker sees only their own row; a manager sees the whole shop. */
+  const bonusRows = useMemo(
+    () =>
+      role === 'worker' && workerName
+        ? performance.filter((entry) => entry.name === workerName)
+        : performance,
+    [performance, role, workerName],
+  );
 
   const deleteLog = useCallback(
     (id: number) => {
@@ -210,7 +108,7 @@ export function DailyScreen(): React.JSX.Element {
       <ScreenHeader
         title="Цаг & Дадал"
         onBack={onBack}
-        subtitle={`Эхлэх цаг: ${timeSettings.startTime}`}
+        subtitle={`${timeSettings.startTime} – ${timeSettings.endTime ?? DEFAULT_END}`}
         right={
           can('changeSettings') ? (
             <Button
@@ -236,187 +134,60 @@ export function DailyScreen(): React.JSX.Element {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Card style={styles.card}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-            ⏰ Ирсэн цаг бүртгэх
-          </Text>
+        {/* Clocking in is something a person does for themselves.
+            The manager reads this screen; letting them tick somebody else's
+            arrival is how a time sheet stops meaning anything. */}
+        {/* Clocking in is something a person does for themselves. The
+            manager reads this screen; letting them tick somebody else's
+            arrival is how a time sheet stops meaning anything. */}
+        {canRegister ? <ArrivalCard /> : null}
 
-          <Text style={[styles.sectionLabel, { color: theme.custom.mutedText }]}>НЭР</Text>
+        {canManageHabits ? <HabitAdminCard /> : null}
 
-          {isOwnName ? (
-            // A worker registers only themselves; showing a picker would just
-            // invite them to clock somebody else in.
-            <View
-              style={[
-                styles.lockedName,
-                {
-                  backgroundColor: theme.colors.primaryContainer,
-                  borderColor: theme.colors.primary,
-                },
-              ]}
-            >
-              <Icon source="account-check" size={18} color={theme.colors.primary} />
-              <Text style={[styles.lockedNameText, { color: theme.colors.onPrimaryContainer }]}>
-                {workerName}
-              </Text>
-            </View>
-          ) : employees.length > 0 ? (
-            <View style={styles.nameRow}>
-              {employees.map((employee) => {
-                const active = name === employee.name;
-                return (
-                  <Pressable
-                    key={employee.id}
-                    onPress={() => setName(active ? '' : employee.name)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    style={({ pressed }) => [
-                      styles.nameChip,
-                      {
-                        backgroundColor: active
-                          ? theme.colors.primary
-                          : theme.custom.cardBackground,
-                        borderColor: active ? theme.colors.primary : theme.custom.subtleBorder,
-                      },
-                      pressed && styles.namePressed,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.nameChipText,
-                        { color: active ? theme.colors.onPrimary : theme.colors.onSurface },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {employee.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : (
-            // No roster yet — typing is better than being unable to register.
-            <TextInput
-              mode="outlined"
-              placeholder="Нэр"
-              value={name}
-              onChangeText={setName}
-              dense
-            />
-          )}
+        {/* Points and the money they come to are the manager's to read. Staff
+            still tick their habits — the ticking is the record — but a running
+            total on a shared shop floor turns a quiet measure into a public
+            league table, which is not what it was for. */}
+        {/* The shape of the month, not another table of it. */}
+        {canViewScores ? <AttendanceChartCard performance={performance} /> : null}
 
-          {/* The shift start is the answer almost every time, so it leads. */}
-          <TimeField
-            label="ИРСЭН ЦАГ"
-            value={arrivalTime}
-            onChange={changeArrivalTime}
-            presets={arrivalPresets}
-          />
-
-          <View style={styles.habitHeader}>
-            <Text style={[styles.sectionLabel, { color: theme.custom.mutedText }]}>
-              ДАДАЛ & ЦЭВЭРЛЭГЭЭ
-            </Text>
-            <Text style={[styles.scoreBadge, { color: theme.colors.primary }]}>
-              {earned}/{dailyMax} ⭐
-            </Text>
-          </View>
-
-          {tasks.length === 0 ? (
-            <Text style={[styles.hint, { color: theme.custom.mutedText }]}>
-              Дадал бүртгэгдээгүй байна
-            </Text>
-          ) : (
-            tasks.map((task) => {
-              const checked = doneTaskIds.includes(task.id);
-              return (
-                <Pressable
-                  key={task.id}
-                  onPress={() => toggleTask(task.id)}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked }}
-                  style={[
-                    styles.habitRow,
-                    {
-                      backgroundColor: checked ? '#dcfce7' : theme.colors.surfaceVariant,
-                      borderColor: checked ? '#86efac' : theme.custom.subtleBorder,
-                    },
-                  ]}
-                >
-                  <Checkbox status={checked ? 'checked' : 'unchecked'} />
-                  <Text
-                    style={[
-                      styles.habitText,
-                      {
-                        color: checked ? '#166534' : theme.colors.onSurface,
-                        textDecorationLine: checked ? 'line-through' : 'none',
-                      },
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {task.text}
-                  </Text>
-                  <Text style={styles.habitType}>
-                    {task.type === 'cleaning' ? '🧹' : '⚡'}
-                  </Text>
-                  <Text style={styles.habitScore}>+{task.score || 1}⭐</Text>
-                </Pressable>
-              );
-            })
-          )}
-
-          <Button
-            mode="contained"
-            icon="clock-check"
-            onPress={submit}
-            disabled={name.trim() === ''}
-          >
-            Бүртгэх
-          </Button>
-        </Card>
-
-        {canManageHabits ? (
+        {canViewScores ? (
           <Card style={styles.card}>
             <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-              ➕ Дадал нэмэх
+              🏅 Урамшуулал · {monthLabel(month)}
             </Text>
-            <TextInput
-              mode="outlined"
-              label="Ажлын нэр"
-              value={newTaskText}
-              onChangeText={setNewTaskText}
-              dense
-            />
-            <View style={styles.scoreRow}>
-              <Text style={[styles.sectionLabel, { color: theme.custom.mutedText }]}>Оноо</Text>
-              {[1, 2, 3, 4, 5].map((score) => (
-                <Pressable
-                  key={score}
-                  onPress={() => setNewTaskScore(score)}
-                  accessibilityRole="button"
-                  style={[
-                    styles.scoreDot,
-                    {
-                      backgroundColor:
-                        newTaskScore === score ? '#f59e0b' : theme.custom.cardBackground,
-                      borderColor: newTaskScore === score ? '#f59e0b' : theme.colors.outline,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.scoreDotText,
-                      { color: newTaskScore === score ? '#ffffff' : theme.custom.mutedText },
-                    ]}
-                  >
-                    {score}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <Button mode="contained-tonal" onPress={addTask} disabled={!newTaskText.trim()}>
-              Нэмэх
-            </Button>
+            {bonusRows.length === 0 ? (
+              <Text style={[styles.hint, { color: theme.custom.mutedText }]}>
+                Энэ сард бүртгэл алга. Ирцээ тэмдэглэсний дараа оноо цуглана.
+              </Text>
+            ) : (
+              bonusRows.map((entry) => (
+                <View key={entry.name} style={styles.bonusRow}>
+                  <View style={styles.flex}>
+                    <Text style={[styles.logName, { color: theme.colors.onSurface }]}>
+                      {entry.name}
+                    </Text>
+                    <Text style={[styles.logTasks, { color: theme.custom.mutedText }]}>
+                      {entry.score}/{entry.maxScore} оноо · {entry.days} өдөр ·{' '}
+                      {entry.late} хоцорсон
+                    </Text>
+                    <ProgressBar
+                      progress={entry.pct}
+                      color="#16a34a"
+                      style={styles.bonusBar}
+                    />
+                  </View>
+                  <View style={styles.bonusAmount}>
+                    <Text style={[styles.bonusValue, { color: theme.colors.primary }]}>
+                      {formatCurrency(entry.bonus)}
+                    </Text>
+                    <Text style={[styles.logTasks, { color: theme.custom.mutedText }]}>
+                      {Math.round(entry.pct * 100)}%
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
           </Card>
         ) : null}
 
@@ -481,6 +252,14 @@ export function DailyScreen(): React.JSX.Element {
               setTimeSettings((previous) => ({ ...previous, startTime: value }))
             }
             presets={['09:00', '09:30', '10:00', '11:00']}
+          />
+          <TimeField
+            label="АЖИЛ ТАРАХ ЦАГ"
+            value={timeSettings.endTime ?? DEFAULT_END}
+            onChange={(value) =>
+              setTimeSettings((previous) => ({ ...previous, endTime: value }))
+            }
+            presets={['18:00', '18:30', '19:00', '20:00']}
           />
           <TextInput
             mode="outlined"
@@ -565,6 +344,10 @@ const styles = StyleSheet.create({
   logStatus: { fontSize: 11, fontWeight: '700' },
   logTasks: { fontSize: 10, marginTop: 2 },
   logTime: { fontSize: 14, fontWeight: '900' },
+  bonusRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
+  bonusBar: { height: 6, borderRadius: 999, marginTop: 6 },
+  bonusAmount: { alignItems: 'flex-end' },
+  bonusValue: { fontSize: 15, fontWeight: '900' },
   deleteIcon: { fontSize: 14, opacity: 0.4 },
   deleteArmed: { fontSize: 10, fontWeight: '900', color: '#dc2626' },
   modal: { margin: 16, borderRadius: 20, padding: 16, gap: 10 },

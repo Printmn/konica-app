@@ -16,11 +16,14 @@ import {
   calcTypesRepository,
   colorLabelsRepository,
   employeesRepository,
+  announcementsRepository,
+  expensesRepository,
   inventoryRepository,
   ordersRepository,
   servicesRepository,
   tasksRepository,
   timeSettingsRepository,
+  usageRepository,
   workLogsRepository,
 } from '@/firebase/repositories';
 import {
@@ -35,15 +38,18 @@ import {
   subscribeQueue,
 } from '@/services/sync/writeQueue';
 import type {
+  Announcement,
   AttendanceLog,
   CalcType,
   ColorLabel,
   Employee,
+  Expense,
   HabitTask,
   InventoryItem,
   Order,
   RemoteKey,
   ServiceItem,
+  StockUsage,
   TimeSettings,
   WorkLog,
 } from '@/types';
@@ -78,6 +84,9 @@ interface DataState {
   inventory: InventoryItem[];
   services: ServiceItem[];
   tasks: HabitTask[];
+  expenses: Expense[];
+  announcements: Announcement[];
+  usage: StockUsage[];
 }
 
 interface DataContextValue extends DataState {
@@ -98,6 +107,9 @@ interface DataContextValue extends DataState {
   setInventory: (updater: Updater<InventoryItem[]>) => void;
   setServices: (updater: Updater<ServiceItem[]>) => void;
   setTasks: (updater: Updater<HabitTask[]>) => void;
+  setExpenses: (updater: Updater<Expense[]>) => void;
+  setAnnouncements: (updater: Updater<Announcement[]>) => void;
+  setUsage: (updater: Updater<StockUsage[]>) => void;
 
   syncNow: () => Promise<void>;
 }
@@ -114,6 +126,7 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
     calcTypes: [],
     timeSettings: {
       startTime: '10:00',
+      endTime: '18:30',
       penaltyPerMin: 500,
       onTimeScore: 5,
       onLeaveScore: 3,
@@ -122,6 +135,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
     inventory: [],
     services: [],
     tasks: [],
+    expenses: [],
+    announcements: [],
+    usage: [],
   });
 
   const [isHydrating, setIsHydrating] = useState(true);
@@ -155,6 +171,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
         inventory,
         services,
         tasks,
+        expenses,
+        announcements,
+        usage,
       ] = await Promise.all([
         ordersRepository.readLocal(),
         workLogsRepository.readLocal(),
@@ -166,6 +185,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
         inventoryRepository.readLocal(),
         servicesRepository.readLocal(),
         tasksRepository.readLocal(),
+        expensesRepository.readLocal(),
+        announcementsRepository.readLocal(),
+        usageRepository.readLocal(),
       ]);
       if (cancelled) return;
       setState({
@@ -179,6 +201,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
         inventory,
         services,
         tasks,
+        expenses,
+        announcements,
+        usage,
       });
       setIsHydrating(false);
       await refreshConnectivity();
@@ -212,6 +237,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
         inventoryRepository.fetchRemote(),
         servicesRepository.fetchRemote(),
         tasksRepository.fetchRemote(),
+        expensesRepository.fetchRemote(),
+        announcementsRepository.fetchRemote(),
+        usageRepository.fetchRemote(),
       ] as const);
 
       const [
@@ -225,6 +253,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
         inventory,
         services,
         tasks,
+        expenses,
+        announcements,
+        usage,
       ] = results;
 
       const failed = results.find((r) => !r.ok);
@@ -252,6 +283,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
         next.inventory = adoptable('inventory', inventory) ?? previous.inventory;
         next.services = adoptable('services', services) ?? previous.services;
         next.tasks = adoptable('tasks', tasks) ?? previous.tasks;
+        next.expenses = adoptable('expenses', expenses) ?? previous.expenses;
+        next.announcements = adoptable('announcements', announcements) ?? previous.announcements;
+        next.usage = adoptable('usage', usage) ?? previous.usage;
         return next;
       });
 
@@ -273,6 +307,11 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
         inventory.ok && inventory.value ? inventoryRepository.cacheOnly(inventory.value) : null,
         services.ok && services.value ? servicesRepository.cacheOnly(services.value) : null,
         tasks.ok && tasks.value ? tasksRepository.cacheOnly(tasks.value) : null,
+        expenses.ok && expenses.value ? expensesRepository.cacheOnly(expenses.value) : null,
+        announcements.ok && announcements.value
+          ? announcementsRepository.cacheOnly(announcements.value)
+          : null,
+        usage.ok && usage.value ? usageRepository.cacheOnly(usage.value) : null,
       ]);
 
       setLastSyncedAt(Date.now());
@@ -368,6 +407,18 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
     () => makeSetter('tasks', (p, v) => tasksRepository.save(p, v)),
     [makeSetter],
   );
+  const setExpenses = useMemo(
+    () => makeSetter('expenses', (p, v) => expensesRepository.save(p, v)),
+    [makeSetter],
+  );
+  const setAnnouncements = useMemo(
+    () => makeSetter('announcements', (p, v) => announcementsRepository.save(p, v)),
+    [makeSetter],
+  );
+  const setUsage = useMemo(
+    () => makeSetter('usage', (p, v) => usageRepository.save(p, v)),
+    [makeSetter],
+  );
 
   const value = useMemo<DataContextValue>(
     () => ({
@@ -388,6 +439,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
       setInventory,
       setServices,
       setTasks,
+      setExpenses,
+      setAnnouncements,
+      setUsage,
       syncNow,
     }),
     [
@@ -408,6 +462,9 @@ export function DataProvider({ children }: { children: ReactNode }): React.JSX.E
       setInventory,
       setServices,
       setTasks,
+      setExpenses,
+      setAnnouncements,
+      setUsage,
       syncNow,
     ],
   );

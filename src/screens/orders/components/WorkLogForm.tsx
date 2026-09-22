@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Modal, Portal, TextInput } from 'react-native-paper';
 
@@ -37,6 +37,7 @@ import {
   DAY_LABELS_MN,
   MONTH_NAMES_MN,
   daysInMonth,
+  nowTimeString,
   shiftDate,
   todayString,
   weekdayOf,
@@ -150,6 +151,14 @@ interface WorkLogFormProps {
   inventory: readonly InventoryItem[];
   /** Reads «Хадгалах» when an existing job is being corrected. */
   submitLabel?: string;
+  /**
+   * Keep the intake time on the clock while the form is new and untouched.
+   *
+   * Off when correcting an existing job: the time that job came in is a fact
+   * about the past, and quietly rewriting it to «now» because the manager
+   * opened the row to fix a price would be a lie the board then repeats.
+   */
+  autoTime?: boolean;
 }
 
 function WorkLogFormBase({
@@ -160,6 +169,7 @@ function WorkLogFormBase({
   services,
   inventory,
   submitLabel = 'Бүртгэх',
+  autoTime = false,
 }: WorkLogFormProps): React.JSX.Element {
   const theme = useAppTheme();
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -218,6 +228,32 @@ function WorkLogFormBase({
 
   const set = <K extends keyof FormShape>(key: K, value: FormShape[K]): void =>
     onChange({ ...form, [key]: value });
+
+  /**
+   * The intake clock, kept honest while nobody has typed in it.
+   *
+   * `emptyWorkLogForm` stamps the time the form was opened, which is right for
+   * the ordinary case — book it, done. But the counter iPad leaves this form
+   * open all day, so without a tick a customer at four o'clock would be booked
+   * at whatever time the first person opened the screen, and because the field
+   * is no longer blank the old `clockFromId` fallback can no longer rescue it.
+   *
+   * The guard is the value itself: restamp only while the field still holds
+   * exactly what was last written into it. The first keystroke ends that, and
+   * a time chosen by hand is never touched again.
+   */
+  const autoStamp = useRef(form.receivedTime);
+  useEffect(() => {
+    if (!autoTime) return;
+    const timer = setInterval(() => {
+      if (form.receivedTime !== autoStamp.current) return;
+      const now = nowTimeString();
+      if (now === autoStamp.current) return;
+      autoStamp.current = now;
+      onChange({ ...form, receivedTime: now });
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [autoTime, form, onChange]);
 
   const total = Number(form.price) || 0;
   const vatAmount = Math.round(total * VAT_RATE);

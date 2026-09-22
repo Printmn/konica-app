@@ -34,6 +34,13 @@ export const STORAGE_KEYS = {
   exportFolder: 'pmn_export_folder',
   /** Last Expo push token published, so an unchanged one is not rewritten. */
   pushToken: 'pmn_push_token',
+  /** The day's petty spending — lunch, water, a taxi. */
+  expenses: 'pmn_expenses',
+  /** Sheets drawn off the shelf. */
+  announcements: 'pmn_announcements',
+  usage: 'pmn_usage',
+  /** Name last used on the staff login, so the usual person only types a PIN. */
+  lastWorkerName: 'pmn_last_worker_name',
 } as const;
 
 /** Values that must never touch AsyncStorage — these go to SecureStore. */

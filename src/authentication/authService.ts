@@ -67,6 +67,8 @@ export interface PinVerification {
   valid: boolean;
   role: Role | null;
   workerName: string;
+  /** Why it failed, when the PIN itself was not the problem. */
+  reason?: string;
 }
 
 /**
@@ -79,16 +81,41 @@ export async function verifyPin(
   attemptedRole: Role,
   pin: string,
   employees: readonly Employee[],
+  /**
+   * The name the person typed on the login screen.
+   *
+   * It wins over the roster lookup, because it is the more recent statement of
+   * who is standing there — and because the shop has no screen for editing the
+   * roster, so a personal PIN may well belong to somebody who has since left.
+   * Everything downstream that identifies a person — attendance, the score,
+   * who bought lunch — keys off this string.
+   */
+  typedName = '',
 ): Promise<PinVerification> {
+  const named = typedName.trim();
+
   if (attemptedRole === 'worker') {
     const match = employees.find((employee) => employee.pin === pin);
-    if (match) return { valid: true, role: 'worker', workerName: match.name };
+    if (match) return { valid: true, role: 'worker', workerName: named || match.name };
 
-    // Fallback shared worker PIN, kept so a shift can start before the roster
-    // has been entered — exactly as the web build allowed.
+    /*
+     * Fallback shared worker PIN, kept so a shift can start before the roster
+     * has been entered.
+     *
+     * It now insists on a name. Signing in without one produced a session
+     * called «Ажилтан», and everything downstream keys off that string: two
+     * people on two phones both posted to the chat as «Ажилтан», both saw the
+     * other's messages as their own — complete with a delete button — and
+     * neither could be told apart on the attendance list. The shared PIN's
+     * whole purpose is a shift starting before the roster exists, and typing
+     * who you are is the one thing that costs nothing in that situation.
+     */
     const sharedPin = await getPin('worker');
     if (sharedPin !== null && pin === sharedPin) {
-      return { valid: true, role: 'worker', workerName: '' };
+      if (named === '') {
+        return { valid: false, role: null, workerName: '', reason: 'Нэрээ оруулна уу.' };
+      }
+      return { valid: true, role: 'worker', workerName: named };
     }
     return { valid: false, role: null, workerName: '' };
   }

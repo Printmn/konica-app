@@ -43,15 +43,29 @@ export function PerformanceScreen(): React.JSX.Element {
   const { can } = useAuth();
   const { showError } = useToast();
   const { gutter } = useResponsive();
-  const { attendanceLogs, employees, tasks, workLogs, isOffline, pendingWrites } = useData();
+  const { attendanceLogs, employees, tasks, timeSettings, workLogs, isOffline, pendingWrites } =
+    useData();
+
+  /** What a perfect month pays, as the manager set it. */
+  const bonusCeiling =
+    typeof timeSettings.maxBonus === 'number' && timeSettings.maxBonus > 0
+      ? timeSettings.maxBonus
+      : MAX_MONTHLY_BONUS;
 
   const [month, setMonth] = useState(currentMonthString());
   const [tab, setTab] = useState<'summary' | 'revenue'>('summary');
   const [busy, setBusy] = useState(false);
 
   const performance = useMemo(
-    () => calculatePerformance({ month, attendanceLogs, employees, tasks }),
-    [month, attendanceLogs, employees, tasks],
+    () =>
+      calculatePerformance({
+        month,
+        attendanceLogs,
+        employees,
+        tasks,
+        maxBonus: timeSettings.maxBonus,
+      }),
+    [month, attendanceLogs, employees, tasks, timeSettings.maxBonus],
   );
 
   const revenue = useMemo(
@@ -204,7 +218,7 @@ export function PerformanceScreen(): React.JSX.Element {
             )}
 
             <Text style={[styles.footnote, { color: theme.custom.mutedText }]}>
-              Урамшууллын дээд хэмжээ: {formatCurrency(MAX_MONTHLY_BONUS)} · Хувь ={' '}
+              Урамшууллын дээд хэмжээ: {formatCurrency(bonusCeiling)} · Хувь ={' '}
               олсон оноо ÷ (ажлын өдөр × өдрийн макс оноо)
             </Text>
           </>

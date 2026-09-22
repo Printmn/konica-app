@@ -66,6 +66,41 @@ export function chatMessage(message: ChatMessage): PushMessage {
   };
 }
 
+export interface AttendanceLog {
+  name?: string;
+  time?: string;
+  date?: string;
+  isLate?: boolean;
+  status?: string;
+  completedScore?: number;
+  completedTaskCount?: number;
+  totalTaskCount?: number;
+}
+
+/**
+ * Somebody clocked in.
+ *
+ * Aimed at the manager, who is not in the shop at nine in the morning and
+ * whose first question of the day is exactly this. Lateness leads the line
+ * because it is the only part that ever needs acting on.
+ */
+export function arrivalMessage(log: AttendanceLog): PushMessage | null {
+  const name = log.name?.trim();
+  if (!name || !log.time) return null;
+
+  const tasks =
+    (log.totalTaskCount ?? 0) > 0
+      ? ` · ${log.completedTaskCount ?? 0}/${log.totalTaskCount} даалгавар`
+      : '';
+
+  return {
+    title: log.isLate ? '⏰ Хоцорч ирлээ' : '✅ Цагтаа ирлээ',
+    body: `${name} — ${log.time}${tasks}`,
+    channelId: 'attendance',
+    data: { kind: 'attendance' },
+  };
+}
+
 export const LOW_STOCK_THRESHOLD = 5;
 
 /** Stock is stored as free text on old rows: `'12'`, `'12 ш'`, `''`. */

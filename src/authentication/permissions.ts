@@ -25,6 +25,7 @@ export type Capability =
   | 'deleteWorkLogs'
   | 'manageEmployees'
   | 'manageHabits'
+  | 'viewScores'
   | 'exportData'
   | 'changeSettings';
 
@@ -33,10 +34,22 @@ const MATRIX: Readonly<Record<Capability, readonly Role[]>> = {
   viewOrders: ['manager', 'ipad'],
   viewWorkLogs: ['manager', 'ipad'],
   viewAttendance: ['manager', 'ipad', 'worker'],
-  viewInventory: ['manager', 'ipad', 'worker'],
-  viewServices: ['manager', 'ipad', 'worker'],
-  viewReport: ['manager', 'ipad'],
-  viewPerformance: ['manager', 'ipad'],
+  // The price lists are the shop's, not the staff's. Taking them off the
+  // worker role means the screens are never registered for that role at all —
+  // hidden tabs would still be reachable by a stray `navigate`.
+  viewInventory: ['manager', 'ipad'],
+  viewServices: ['manager', 'ipad'],
+  /**
+   * The day's takings and the days before it.
+   *
+   * Manager only. The counter iPad is a shared device in a public room — it
+   * is left face-up while somebody fetches a job — and what the shop earned
+   * last Tuesday is not something a customer should be able to read over the
+   * counter. Booking work needs none of it.
+   */
+  viewReport: ['manager'],
+  // Scores and the month's bonus, same rule as `viewScores`.
+  viewPerformance: ['manager'],
   viewQuotation: ['manager', 'ipad'],
   viewAdmin: ['manager', 'ipad'],
   viewChat: ['manager', 'ipad', 'worker'],
@@ -50,7 +63,19 @@ const MATRIX: Readonly<Record<Capability, readonly Role[]>> = {
   // and nothing in the app can bring it back.
   deleteWorkLogs: ['manager'],
   manageEmployees: ['manager'],
-  manageHabits: ['manager', 'ipad'],
+  // Habits and their point values are the manager's to set: they decide what
+  // a month's bonus comes to, and the counter iPad is a shared device anybody
+  // in the shop can pick up.
+  manageHabits: ['manager'],
+  /**
+   * Seeing the points and the money they add up to.
+   *
+   * Staff still tick their habits — the ticking is the record — but the score
+   * and the bonus are the manager's to read. A running total on a shared shop
+   * floor turns a quiet measure into a public league table, which is not what
+   * it was for.
+   */
+  viewScores: ['manager'],
   exportData: ['manager', 'ipad'],
   changeSettings: ['manager'],
 };

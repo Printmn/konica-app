@@ -42,6 +42,8 @@ const CHANNELS = {
   chat: 'chat',
   /** Jobs coming due — pushed by the scheduled sweep, never raised locally. */
   deadline: 'deadline',
+  /** Somebody clocked in — pushed to managers, never raised locally. */
+  attendance: 'attendance',
 } as const;
 
 let permissionGranted: boolean | null = null;
@@ -69,6 +71,10 @@ export async function initNotifications(): Promise<boolean> {
           name: 'Хугацаа дөхсөн ажил',
           importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
+        }),
+        Notifications.setNotificationChannelAsync(CHANNELS.attendance, {
+          name: 'Ирц',
+          importance: Notifications.AndroidImportance.DEFAULT,
         }),
       ]);
     }
@@ -106,6 +112,60 @@ async function present(
   } catch (error) {
     logger.warn('Failed to present notification', error);
   }
+}
+
+/**
+ * The clock-in nudges, scheduled as one batch.
+ *
+ * Any previously scheduled batch is cancelled first, so a shift time changed
+ * in Settings does not leave yesterday's 09:30 still armed. Identified by a
+ * tag in the payload rather than by keeping ids around: the app is killed
+ * nightly and a list held in memory would not survive to do the cancelling.
+ */
+const CLOCK_IN_TAG = 'clock-in-reminder';
+
+export async function cancelClockInReminders(): Promise<void> {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(
+      scheduled
+        .filter((item) => item.content.data?.['tag'] === CLOCK_IN_TAG)
+        .map((item) => Notifications.cancelScheduledNotificationAsync(item.identifier)),
+    );
+  } catch (error) {
+    logger.warn('Failed to clear clock-in reminders', error);
+  }
+}
+
+export async function scheduleClockInReminders(
+  reminders: readonly { lead: number; body: string; seconds: number }[],
+): Promise<void> {
+  await cancelClockInReminders();
+  if (permissionGranted === false) return;
+  try {
+    for (const reminder of reminders) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '⏰ Ирцийн бүртгэл',
+          body: reminder.body,
+          sound: true,
+          data: { tag: CLOCK_IN_TAG, lead: reminder.lead },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: reminder.seconds,
+          ...(Platform.OS === 'android' ? { channelId: CHANNELS.attendance } : {}),
+        },
+      });
+    }
+  } catch (error) {
+    logger.warn('Failed to schedule clock-in reminders', error);
+  }
+}
+
+/** The manager has posted something the shop should read. */
+export function notifyAnnouncement(title: string, body: string): Promise<void> {
+  return present(`📢 ${title}`, body || 'Шинэ мэдээлэл', CHANNELS.attendance);
 }
 
 /** Fired when a new work log is registered. */

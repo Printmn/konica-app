@@ -21,7 +21,11 @@ export type MainTabParamList = {
   Services: undefined;
   Report: undefined;
   Performance: undefined;
+  Staff: undefined;
+  Profile: undefined;
+  Usage: undefined;
   Chat: undefined;
+  Notices: undefined;
 };
 
 export type RootStackParamList = {

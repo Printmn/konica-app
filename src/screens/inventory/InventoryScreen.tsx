@@ -154,16 +154,21 @@ export function InventoryScreen(): React.JSX.Element {
         onBack={onBack}
         subtitle={`${inventory.length} нэр төрөл`}
         right={
-          lowStock.length > 0 ? (
-            <Button
-              mode="text"
-              compact
-              textColor="#ffffff"
-              onPress={() => void notifyLowStock(lowStock)}
-            >
-              ⚠️ {lowStock.length}
-            </Button>
-          ) : undefined
+          <View style={styles.headerActions}>
+            {/* Зарцуулалт used to hang off here. It now lives on the Зарлага
+                tab, beside the day's other costs — two doors onto one room is
+                how one of them stops being opened. */}
+            {lowStock.length > 0 ? (
+              <Button
+                mode="text"
+                compact
+                textColor="#ffffff"
+                onPress={() => void notifyLowStock(lowStock)}
+              >
+                ⚠️ {lowStock.length}
+              </Button>
+            ) : null}
+          </View>
         }
       />
 
@@ -353,6 +358,7 @@ export function InventoryScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   header: { paddingVertical: 10, gap: 10 },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
   stats: { flexDirection: 'row', gap: 8 },
   list: { paddingBottom: 96 },
   separator: { height: 8 },

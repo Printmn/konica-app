@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  arrivalMessage,
   dueSoon,
   dueSoonMessage,
   lowStockMessage,
@@ -42,6 +43,33 @@ describe('chatMessage', () => {
 
   it('describes a photo rather than sending an empty line', () => {
     assert.equal(chatMessage({ sender: 'Сараа', image: 'data:...' }).body, '📷 Зураг илгээлээ');
+  });
+});
+
+describe('arrivalMessage', () => {
+  it('leads with lateness, which is the part worth acting on', () => {
+    const late = arrivalMessage({ name: 'Болд', time: '10:15', isLate: true });
+    assert.equal(late?.title, '⏰ Хоцорч ирлээ');
+    assert.equal(late?.body, 'Болд — 10:15');
+
+    const onTime = arrivalMessage({ name: 'Сараа', time: '09:55', isLate: false });
+    assert.equal(onTime?.title, '✅ Цагтаа ирлээ');
+  });
+
+  it('adds the habit tally when there is one', () => {
+    const message = arrivalMessage({
+      name: 'Болд',
+      time: '10:00',
+      completedTaskCount: 3,
+      totalTaskCount: 5,
+    });
+    assert.equal(message?.body, 'Болд — 10:00 · 3/5 даалгавар');
+  });
+
+  it('says nothing at all for a row with no name or no time', () => {
+    assert.equal(arrivalMessage({ time: '10:00' }), null);
+    assert.equal(arrivalMessage({ name: '  ', time: '10:00' }), null);
+    assert.equal(arrivalMessage({ name: 'Болд' }), null);
   });
 });
 

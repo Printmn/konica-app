@@ -27,7 +27,8 @@ interface CalculatorTabProps {
   onRegister: (job: string, price: number) => void;
   /** Omitted for roles that may not read the takings. */
   onOpenReport?: (() => void) | undefined;
-  onOpenArchive: () => void;
+  /** Omitted for a role that may not read past days. */
+  onOpenArchive?: (() => void) | undefined;
   /** The day being viewed, or `null` for today. */
   archiveDate: string | null;
 }
@@ -87,15 +88,19 @@ function CalculatorTabBase({
             Тайлан
           </Button>
         ) : null}
-        <Button
-          mode={archiveDate ? 'contained' : 'outlined'}
-          icon="calendar"
-          compact
-          onPress={onOpenArchive}
-          style={styles.flex}
-        >
-          {archiveDate ? archiveDate : 'Архив'}
-        </Button>
+        {/* Same rule as the report above it: both read past days, and the
+            counter iPad sits face-up in a public room. */}
+        {onOpenArchive ? (
+          <Button
+            mode={archiveDate ? 'contained' : 'outlined'}
+            icon="calendar"
+            compact
+            onPress={onOpenArchive}
+            style={styles.flex}
+          >
+            {archiveDate ? archiveDate : 'Архив'}
+          </Button>
+        ) : null}
       </View>
 
       <View style={styles.headerRow}>

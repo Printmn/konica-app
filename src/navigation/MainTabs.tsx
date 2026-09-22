@@ -5,7 +5,9 @@ import { Icon } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/authentication/AuthContext';
+import { unreadCount as unreadNoticeCount } from '@/features/announcements/announcementLogic';
 import { useChat } from '@/features/chat/ChatContext';
+import { useData } from '@/features/data/DataContext';
 import { useResponsive } from '@/hooks/useResponsive';
 import { ChatScreen } from '@/screens/chat/ChatScreen';
 import { DailyScreen } from '@/screens/daily/DailyScreen';
@@ -17,6 +19,10 @@ import { QuotationScreen } from '@/screens/quotation/QuotationScreen';
 import { QuickPrintScreen } from '@/screens/quickprint/QuickPrintScreen';
 import { ReportScreen } from '@/screens/report/ReportScreen';
 import { ServicesScreen } from '@/screens/services/ServicesScreen';
+import { StockUsageScreen } from '@/screens/inventory/StockUsageScreen';
+import { NoticesScreen } from '@/screens/notices/NoticesScreen';
+import { ProfileScreen } from '@/screens/staff/ProfileScreen';
+import { StaffScreen } from '@/screens/staff/StaffScreen';
 import { useAppTheme } from '@/theme/ThemeProvider';
 
 import {
@@ -41,6 +47,10 @@ const SCREENS: Record<keyof MainTabParamList, React.ComponentType> = {
   Services: ServicesScreen,
   Report: ReportScreen,
   Performance: PerformanceScreen,
+  Staff: StaffScreen,
+  Profile: ProfileScreen,
+  Usage: StockUsageScreen,
+  Notices: NoticesScreen,
   Chat: ChatScreen,
 };
 
@@ -56,9 +66,22 @@ const ACTIVE_GREEN = '#16a34a';
  */
 export function MainTabs(): React.JSX.Element {
   const theme = useAppTheme();
-  const { role } = useAuth();
+  const { role , workerName } = useAuth();
   const { isTablet } = useResponsive();
   const { unreadCount } = useChat();
+
+  /**
+   * Unread notices, badged on the bell.
+   *
+   * Counted per name rather than per device: the counter iPad is everybody's,
+   * and a badge that clears because somebody else read it on the shared
+   * tablet is a badge nobody trusts.
+   */
+  const { announcements } = useData();
+  const unreadNotices = useMemo(
+    () => unreadNoticeCount(announcements, workerName || role || ''),
+    [announcements, workerName, role],
+  );
   const insets = useSafeAreaInsets();
 
   /**
@@ -143,6 +166,11 @@ export function MainTabs(): React.JSX.Element {
             // screen for, so the count rides on the Chat tab.
             ...(tab.name === 'Chat' && unreadCount > 0
               ? { tabBarBadge: unreadCount > 99 ? '99+' : unreadCount }
+              : {}),
+            // The manager's plan for the day is the other thing worth
+            // interrupting for.
+            ...(tab.name === 'Notices' && unreadNotices > 0
+              ? { tabBarBadge: unreadNotices > 9 ? '9+' : unreadNotices }
               : {}),
             tabBarLabel: ({ color, focused }) => (
               <Text

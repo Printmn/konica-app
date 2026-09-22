@@ -89,6 +89,15 @@ const SHORTCUTS: Shortcut[] = [
     go: (nav) => nav.navigate('Main', { screen: 'Services' }),
   },
   {
+    key: 'staff',
+    label: 'Ажилтан',
+    hint: 'Ирц, дадал, зарлага, оноо',
+    icon: 'account-group',
+    tone: 'blue',
+    capability: 'viewAttendance',
+    go: (nav) => nav.navigate('Main', { screen: 'Staff' }),
+  },
+  {
     key: 'quotation',
     label: 'Үнийн санал',
     hint: 'Нэхэмжлэх баримт',

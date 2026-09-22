@@ -1,7 +1,9 @@
 import { ARRIVE_TASK_ID } from '@/constants/config';
 import type { AttendanceLog, HabitTask, TimeSettings } from '@/types';
 import { nextId } from '@/utils/id';
-import { toDateString, toMonthString, timeToMinutes } from '@/utils/date';
+import { timeToMinutes, toDateString, toMonthString } from '@/utils/date';
+
+import { describeDeparture, isEarlyArrival, startMinutesOf } from './clockInReminders';
 
 /**
  * Attendance registration.
@@ -47,13 +49,22 @@ export function registerArrival(input: RegisterArrivalInput): RegisterArrivalRes
   const { name, arrivalTime, doneTaskIds, tasks, timeSettings, now = new Date() } = input;
 
   const arrivalMinutes = timeToMinutes(arrivalTime);
-  const startMinutes = timeToMinutes(timeSettings.startTime);
+  // Through `startMinutesOf`, not `timeToMinutes`: a blank setting parses as
+  // midnight, which would file every arrival as «607 мин хоцорсон» and dock
+  // the whole shop's score on the day somebody cleared the field.
+  const startMinutes = startMinutesOf(timeSettings.startTime);
 
   let statusMsg = 'Цагтаа ирсэн';
   let isLate = false;
   if (arrivalMinutes > startMinutes) {
     isLate = true;
     statusMsg = `${arrivalMinutes - startMinutes} мин хоцорсон`;
+  } else if (isEarlyArrival(arrivalMinutes, startMinutes)) {
+    // Counted as on time and scored in full — this costs nobody a point. It is
+    // said out loud because a 06:00 clock-in on a ten o'clock shift is a phone
+    // tapped at home rather than somebody at the counter, and the manager
+    // should be able to tell the two apart.
+    statusMsg = `Цагтаа ирсэн · ${startMinutes - arrivalMinutes} мин эрт`;
   }
 
   const finalDoneIds =
@@ -85,6 +96,68 @@ export function registerArrival(input: RegisterArrivalInput): RegisterArrivalRes
     nextDoneTaskIds: isLate ? [] : [ARRIVE_TASK_ID],
     isLate,
   };
+}
+
+/**
+ * Stamps the departure onto a day's arrival row.
+ *
+ * Onto the arrival rather than as a second record: a person has one day, and
+ * two rows would need pairing up every time anybody asked how long somebody
+ * worked. Returns a fresh array so the caller's state update stays pure.
+ *
+ * Clocking out twice is a no-op on the second attempt. The first time is the
+ * one that is true — somebody reopening the app at nine to check the chat has
+ * not worked another half-hour.
+ */
+export interface DepartureResult {
+  logs: AttendanceLog[];
+  /** The row that changed, or `null` when there was nothing to stamp. */
+  updated: AttendanceLog | null;
+  /** Why nothing happened, for the message shown. */
+  reason: string | null;
+}
+
+export function registerDeparture(
+  logs: readonly AttendanceLog[],
+  name: string,
+  date: string,
+  leaveTime: string,
+  timeSettings: TimeSettings,
+): DepartureResult {
+  const who = name.trim().toLowerCase();
+  if (who === '') return { logs: [...logs], updated: null, reason: 'Нэр тодорхойгүй байна.' };
+
+  const index = logs.findIndex(
+    (log) => log.date === date && log.name.trim().toLowerCase() === who,
+  );
+  if (index === -1) {
+    return { logs: [...logs], updated: null, reason: 'Эхлээд ирснээ бүртгүүлнэ үү.' };
+  }
+
+  const existing = logs[index];
+  if (existing === undefined) {
+    return { logs: [...logs], updated: null, reason: 'Эхлээд ирснээ бүртгүүлнэ үү.' };
+  }
+  if (existing.leaveTime) {
+    return { logs: [...logs], updated: null, reason: `Аль хэдийн ${existing.leaveTime}-д бүртгэгдсэн.` };
+  }
+
+  const departure = describeDeparture(
+    timeToMinutes(leaveTime),
+    timeToMinutes(existing.time),
+    timeSettings.endTime,
+  );
+
+  const updated: AttendanceLog = {
+    ...existing,
+    leaveTime,
+    leaveStatus: departure.status,
+    leftEarly: departure.early,
+  };
+
+  const next = [...logs];
+  next[index] = updated;
+  return { logs: next, updated, reason: null };
 }
 
 /** Validation used by the screen before calling `registerArrival`. */

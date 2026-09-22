@@ -53,6 +53,46 @@ function dayLabel(at: number): string {
   return date;
 }
 
+/**
+ * A sender's face, or their initial.
+ *
+ * Matched by name because that is what a message carries — the device id says
+ * which handset sent it, and the counter iPad is everybody's. The fallback is
+ * a letter rather than a grey circle: a shop of four is recognisable by first
+ * letter, and a placeholder that says nothing is worse than one that says «Б».
+ */
+function Avatar({ name, photo }: { name: string; photo: string | null }): React.JSX.Element {
+  const theme = useAppTheme();
+  if (photo) {
+    return (
+      <Image
+        source={{ uri: photo }}
+        style={avatarStyles.photo}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+      />
+    );
+  }
+  return (
+    <View style={[avatarStyles.photo, { backgroundColor: theme.colors.primaryContainer }]}>
+      <Text style={[avatarStyles.initial, { color: theme.colors.onPrimaryContainer }]}>
+        {(name.trim()[0] ?? '?').toUpperCase()}
+      </Text>
+    </View>
+  );
+}
+
+const avatarStyles = StyleSheet.create({
+  photo: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  initial: { fontSize: 13, fontWeight: '900' },
+});
+
 export function ChatScreen(): React.JSX.Element {
   const theme = useAppTheme();
   const onBack = useScreenBack();
@@ -60,7 +100,26 @@ export function ChatScreen(): React.JSX.Element {
   const { displayName, can } = useAuth();
   const { showError } = useToast();
   const { gutter } = useResponsive();
-  const { isOffline } = useData();
+  const { isOffline, employees } = useData();
+
+  /**
+   * Name → photo, built once rather than searched per message.
+   *
+   * Case-folded because a message carries the display name as it was typed and
+   * the employee record carries it as entered; «бат» and «Бат» are one person.
+   */
+  const photos = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const employee of employees) {
+      const photo = employee.photo;
+      if (photo) map.set(employee.name.trim().toLowerCase(), photo);
+    }
+    return map;
+  }, [employees]);
+  const photoOf = useCallback(
+    (name: string): string | null => photos.get(name.trim().toLowerCase()) ?? null,
+    [photos],
+  );
   const {
     messages,
     deviceId,
@@ -241,7 +300,9 @@ export function ChatScreen(): React.JSX.Element {
               const showDay =
                 previous === undefined ||
                 toDateString(new Date(previous.at)) !== toDateString(new Date(item.at));
-              // Consecutive messages from one device only need one name.
+              // Consecutive messages from one device only need one name — and
+              // one face. A photo on every line of a five-message burst is
+              // five copies of the same head down the margin.
               const showSender = !isMe && previous?.deviceId !== item.deviceId;
               const canDelete = isMe || canModerate;
               /** Armed by the first tap on the bin; the second tap deletes. */
@@ -262,6 +323,21 @@ export function ChatScreen(): React.JSX.Element {
                     {/* Own messages sit on the right, so their bin goes on the
                         left — on either side it ends up on the outer edge,
                         away from the thumb resting over the text. */}
+                    {/* The sender's own photo, off their employee record.
+                        Matched by name because that is what a message carries:
+                        the device id says which handset, and the counter iPad
+                        is everybody's. Falls back to an initial rather than a
+                        grey circle — a shop of four is recognisable by first
+                        letter, and a placeholder that says nothing is worse
+                        than one that says «Б». */}
+                    {!isMe ? (
+                      <View style={styles.avatarSlot}>
+                        {showSender ? (
+                          <Avatar name={item.sender} photo={photoOf(item.sender)} />
+                        ) : null}
+                      </View>
+                    ) : null}
+
                     {canDelete && isMe ? (
                       <IconButton
                         icon={armed ? 'trash-can' : 'trash-can-outline'}
@@ -413,7 +489,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     letterSpacing: 0.4,
   },
-  bubbleRow: { flexDirection: 'row', alignItems: 'center' },
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  /* Held open even on a follow-up message so the bubbles below the first one
+     stay aligned with it instead of sliding left under the face. */
+  avatarSlot: { width: 34, alignItems: 'flex-start' },
   mine: { justifyContent: 'flex-end' },
   theirs: { justifyContent: 'flex-start' },
   trash: { margin: 0 },

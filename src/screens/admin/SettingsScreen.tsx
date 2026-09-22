@@ -23,7 +23,7 @@ import { createBackup, restoreBackup } from '@/services/sync/backupService';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useToast } from '@/hooks/useToast';
 import { useAppTheme, useThemeMode } from '@/theme/ThemeProvider';
-import type { InventoryItem } from '@/types';
+import type { InventoryItem, Role } from '@/types';
 import { nextId } from '@/utils/id';
 import { parsePrice } from '@/utils/price';
 
@@ -64,6 +64,13 @@ function pushSummary(status: PushStatus): { title: string; hint: string; icon: s
       };
   }
 }
+
+/** Shown in the toast, so it is obvious which door was just re-keyed. */
+const ROLE_LABELS: Record<Role, string> = {
+  manager: 'Менежер',
+  ipad: 'iPad',
+  worker: 'Ажилтан',
+};
 
 export function SettingsScreen(): React.JSX.Element {
   const theme = useAppTheme();
@@ -108,16 +115,31 @@ export function SettingsScreen(): React.JSX.Element {
   const [newPin, setNewPin] = useState('');
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Which door the new PIN opens.
+   *
+   * It used to be whichever role happened to be signed in, which meant the one
+   * PIN nobody could reset was the one they had forgotten: signing in as
+   * manager let you change the manager's PIN and nothing else. A manager can
+   * now set any of the three on this device — the only way back in short of
+   * reinstalling the app.
+   */
+  const [pinTarget, setPinTarget] = useState<Role>(role ?? 'manager');
+
   const changePin = useCallback(async () => {
-    if (!role) return;
+    const target = can('changeSettings') ? pinTarget : role;
+    if (!target) return;
     if (newPin.length !== PIN_LENGTH) {
       show(`PIN ${PIN_LENGTH} оронтой байх ёстой`, 'error');
       return;
     }
-    const saved = await setPin(role, newPin);
-    show(saved ? 'PIN шинэчлэгдлээ' : 'PIN хадгалж чадсангүй', saved ? 'success' : 'error');
+    const saved = await setPin(target, newPin);
+    show(
+      saved ? `${ROLE_LABELS[target]} PIN шинэчлэгдлээ` : 'PIN хадгалж чадсангүй',
+      saved ? 'success' : 'error',
+    );
     setNewPin('');
-  }, [role, newPin, show]);
+  }, [role, pinTarget, newPin, can, show]);
 
   const shareErrors = useCallback(async () => {
     setBusy(true);
@@ -441,8 +463,20 @@ export function SettingsScreen(): React.JSX.Element {
               🔐 PIN солих
             </Text>
             <Text style={[styles.hint, { color: theme.custom.mutedText }]}>
-              Шинэ PIN нь зөвхөн энэ төхөөрөмжийн аюулгүй санд хадгалагдана.
+              Шинэ PIN нь зөвхөн энэ төхөөрөмжийн аюулгүй санд хадгалагдана. Мартсан
+              PIN-ийг эндээс сэргээнэ.
             </Text>
+
+            <SegmentedButtons
+              value={pinTarget}
+              onValueChange={(value) => setPinTarget(value)}
+              density="small"
+              buttons={[
+                { value: 'manager', label: 'Менежер' },
+                { value: 'ipad', label: 'iPad' },
+                { value: 'worker', label: 'Ажилтан' },
+              ]}
+            />
             <TextInput
               mode="outlined"
               label={`Шинэ PIN (${PIN_LENGTH} орон)`}

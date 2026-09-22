@@ -142,3 +142,43 @@ describe('dailyMaxScore', () => {
     expect(dailyMaxScore([{ id: 1, text: 'x', done: false, type: 'habit' } as HabitTask])).toBe(1);
   });
 });
+
+describe('the bonus ceiling is the manager\'s to set', () => {
+  const base = {
+    month: '2026-08',
+    employees: [{ id: 1, name: 'Болд', pin: '1234', restDays: [] }] as never,
+    tasks: [{ id: 1, text: 'Цагтаа ирэх', done: false, type: 'habit', score: 5 }] as never,
+    attendanceLogs: [
+      {
+        id: 1,
+        name: 'Болд',
+        date: '2026-08-01',
+        month: '2026-08',
+        time: '10:00',
+        isLate: false,
+        completedScore: 5,
+        completedTaskCount: 1,
+        totalTaskCount: 1,
+      },
+    ] as never,
+  };
+
+  it('falls back to the compiled default when nothing is set', () => {
+    const [entry] = calculatePerformance(base);
+    expect(entry?.bonus).toBe(Math.round((entry?.pct ?? 0) * 100_000));
+  });
+
+  it('scales to whatever figure the manager entered', () => {
+    const [entry] = calculatePerformance({ ...base, maxBonus: 250_000 });
+    expect(entry?.bonus).toBe(Math.round((entry?.pct ?? 0) * 250_000));
+  });
+
+  it('ignores a zero or negative ceiling rather than paying nothing', () => {
+    // A cleared field must not silently zero everybody's bonus.
+    const [zero] = calculatePerformance({ ...base, maxBonus: 0 });
+    const [negative] = calculatePerformance({ ...base, maxBonus: -5 });
+    const [fallback] = calculatePerformance(base);
+    expect(zero?.bonus).toBe(fallback?.bonus);
+    expect(negative?.bonus).toBe(fallback?.bonus);
+  });
+});

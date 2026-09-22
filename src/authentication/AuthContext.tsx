@@ -31,10 +31,18 @@ interface AuthContextValue {
   role: Role | null;
   workerName: string;
   displayName: string;
+  /** Why the last login attempt failed, when the PIN was not the problem. */
+  loginError: string;
   isRestoring: boolean;
   /** True on a fresh install: no PIN exists yet, so nobody can log in. */
   needsPinSetup: boolean;
-  login: (role: Role, pin: string, employees: readonly Employee[]) => Promise<boolean>;
+  login: (
+    role: Role,
+    pin: string,
+    employees: readonly Employee[],
+    /** Only meaningful for staff, who say who they are as they sign in. */
+    workerName?: string,
+  ) => Promise<boolean>;
   logout: () => Promise<void>;
   /** First-run setup — the manager chooses the three shared PINs. */
   setupPins: (pins: { manager: string; ipad: string; worker: string }) => Promise<boolean>;
@@ -45,6 +53,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
+  /** Why the last attempt failed, when the PIN itself was fine. */
+  const [loginError, setLoginError] = useState('');
   const [isRestoring, setIsRestoring] = useState(true);
   const [needsPinSetup, setNeedsPinSetup] = useState(false);
 
@@ -89,9 +99,21 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   }, [session?.role]);
 
   const login = useCallback(
-    async (attemptedRole: Role, pin: string, employees: readonly Employee[]) => {
-      const result = await verifyPin(attemptedRole, pin, employees);
-      if (!result.valid || result.role === null) return false;
+    async (
+      attemptedRole: Role,
+      pin: string,
+      employees: readonly Employee[],
+      workerName = '',
+    ) => {
+      const result = await verifyPin(attemptedRole, pin, employees, workerName);
+      if (!result.valid || result.role === null) {
+        // Passed back so the keypad can say «Нэрээ оруулна уу» rather than
+        // «Буруу PIN» — the PIN was right and telling them otherwise sends
+        // them off to try three more.
+        setLoginError(result.reason ?? '');
+        return false;
+      }
+      setLoginError('');
       const next: Session = { role: result.role, workerName: result.workerName };
       await persistSession(next);
       setSession(next);
@@ -126,12 +148,13 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       displayName: roleLabel(session?.role ?? null, session?.workerName ?? ''),
       isRestoring,
       needsPinSetup,
+      loginError,
       login,
       logout,
       setupPins,
       can: (capability: Capability) => can(session?.role ?? null, capability),
     }),
-    [session, isRestoring, needsPinSetup, login, logout, setupPins],
+    [session, isRestoring, needsPinSetup, loginError, login, logout, setupPins],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

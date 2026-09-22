@@ -17,12 +17,23 @@ export interface TabDefinition {
   icon: string;
 }
 
+/**
+ * What a member of staff sees.
+ *
+ * Three destinations, and nothing about money. «Ажилтан» leads because it is
+ * why this role exists: the day's spending, the score, and where the person
+ * stands. The two price lists were here so the counter could answer «how
+ * much?» — but the counter works from the shared iPad, and a shop's price list
+ * on everybody's personal phone is a copy the shop cannot take back.
+ */
 const WORKER_TABS: TabDefinition[] = [
-  { name: 'Home', label: 'Нүүр', icon: 'home-variant' },
+  { name: 'Staff', label: 'Ажилтан', icon: 'account-group' },
   { name: 'Daily', label: 'Дадал', icon: 'calendar-check' },
   { name: 'Chat', label: 'Чат', icon: 'message-text' },
-  { name: 'Inventory', label: 'Бараа үнэ', icon: 'package-variant' },
-  { name: 'Services', label: 'Хэвлэл үнэ', icon: 'layers' },
+  // The bell, not a contact card. Personal details live inside Ажилтан,
+  // where the manager already edits them; this slot is where the shop's
+  // notices arrive, which is the thing worth a badge on the bar.
+  { name: 'Notices', label: 'Мэдээлэл', icon: 'bell' },
 ];
 
 /**
@@ -42,8 +53,18 @@ const FULL_TABS: TabDefinition[] = [
   { name: 'Quotation', label: 'Санал', icon: 'file-document-outline' },
 ];
 
+/** The counter's bar. Түргэн хэвлэл is the shared iPad's whole reason to exist. */
 const IPAD_TABS: TabDefinition[] = FULL_TABS;
-const MANAGER_TABS: TabDefinition[] = FULL_TABS;
+
+/**
+ * The manager's bar: the same, without Түргэн.
+ *
+ * Quick print is a counter action taken on the shared iPad while a customer
+ * waits. The manager books through the order form, so the button was only ever
+ * taking a slot from the five they do use — and a narrower bar means the
+ * remaining labels stop clipping.
+ */
+const MANAGER_TABS: TabDefinition[] = FULL_TABS.filter((tab) => tab.name !== 'QuickPrint');
 
 export const tabsForRole = (role: Role): TabDefinition[] => {
   switch (role) {
@@ -74,7 +95,11 @@ export const TAB_CAPABILITY: Readonly<Record<keyof MainTabParamList, Capability>
   Services: 'viewServices',
   Report: 'viewReport',
   Performance: 'viewPerformance',
+  Staff: 'viewAttendance',
+  Profile: 'viewAttendance',
+  Usage: 'viewInventory',
   Chat: 'viewChat',
+  Notices: 'viewAttendance',
 };
 
 /**
@@ -90,8 +115,9 @@ export const hiddenTabsForRole = (role: Role): (keyof MainTabParamList)[] => {
 
 /** Landing tab after login, matching `doLogin`'s default-view branch. */
 export const initialTabForRole = (role: Role): keyof MainTabParamList =>
-  // The counter opens the app to book something; anything else is a detour.
-  role === 'worker' ? 'Inventory' : 'Orders';
+  // The counter opens the app to book something; a member of staff opens it to
+  // clock in and see where their score stands.
+  role === 'worker' ? 'Staff' : 'Orders';
 
 /**
  * The full destination list for the tablet sidebar — a superset of the tab bar,
@@ -134,28 +160,44 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
     key: 'inventory',
     label: 'Барааны үнэ',
     icon: 'package-variant',
-    roles: ['manager', 'ipad', 'worker'],
+    roles: ['manager', 'ipad'],
     tab: 'Inventory',
   },
   {
     key: 'services',
     label: 'Хэвлэлийн үнэ',
     icon: 'layers',
-    roles: ['manager', 'ipad', 'worker'],
+    roles: ['manager', 'ipad'],
     tab: 'Services',
+  },
+  {
+    key: 'profile',
+    label: 'Хувийн мэдээлэл',
+    icon: 'account-details',
+    roles: ['manager', 'ipad', 'worker'],
+    tab: 'Profile',
+  },
+  {
+    key: 'staff',
+    label: 'Ажилтан',
+    icon: 'account-group',
+    roles: ['manager', 'ipad', 'worker'],
+    tab: 'Staff',
   },
   {
     key: 'performance',
     label: 'Үзүүлэлт',
     icon: 'trending-up',
-    roles: ['manager', 'ipad'],
+    roles: ['manager'],
     tab: 'Performance',
   },
   {
     key: 'report',
     label: 'Тайлан',
     icon: 'format-list-bulleted',
-    roles: ['manager', 'ipad'],
+    // Manager only, like `viewReport`. The sidebar is the tablet's way in and
+    // would otherwise hand the counter the door the tab bar just closed.
+    roles: ['manager'],
     tab: 'Report',
   },
   {
@@ -171,6 +213,13 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
     icon: 'cog',
     roles: ['manager', 'ipad'],
     stack: 'Admin',
+  },
+  {
+    key: 'notices',
+    label: 'Мэдээлэл',
+    icon: 'bell',
+    roles: ['manager', 'ipad', 'worker'],
+    tab: 'Notices',
   },
   {
     key: 'chat',

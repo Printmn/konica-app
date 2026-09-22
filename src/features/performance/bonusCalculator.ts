@@ -51,6 +51,15 @@ export interface PerformanceInput {
   attendanceLogs: readonly AttendanceLog[];
   employees: readonly Employee[];
   tasks: readonly HabitTask[];
+  /**
+   * What a perfect month pays, in tögrög.
+   *
+   * The shop used to be stuck with the figure compiled into the app. It is the
+   * one number in this calculation the manager has an opinion about, so it is
+   * now theirs to set — and an unset or nonsensical value falls back to the
+   * old constant rather than paying nothing.
+   */
+  maxBonus?: number;
 }
 
 /**
@@ -59,6 +68,10 @@ export interface PerformanceInput {
  */
 export function calculatePerformance(input: PerformanceInput): EmployeePerformance[] {
   const { month, attendanceLogs, employees, tasks } = input;
+  const ceiling =
+    typeof input.maxBonus === 'number' && input.maxBonus > 0
+      ? input.maxBonus
+      : MAX_MONTHLY_BONUS;
   const dailyMax = dailyMaxScore(tasks);
   const monthLogs = attendanceLogs.filter((log) => log.month === month);
 
@@ -105,7 +118,7 @@ export function calculatePerformance(input: PerformanceInput): EmployeePerforman
         score,
         maxScore,
         pct,
-        bonus: Math.round(pct * MAX_MONTHLY_BONUS),
+        bonus: Math.round(pct * ceiling),
       };
     })
     .sort((a, b) => b.score - a.score);

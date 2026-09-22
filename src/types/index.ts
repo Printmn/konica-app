@@ -164,14 +164,40 @@ export interface AttendanceLog {
   totalTaskCount: number;
   completedScore: number;
   totalPossibleScore: number;
+  /**
+   * `18:35` — when they clocked out, if they did.
+   *
+   * Recorded onto the arrival row rather than as a second record: a person has
+   * one day, and two rows would need pairing up every time anybody asked how
+   * long somebody worked. Absent means still in, or forgot.
+   */
+  leaveTime?: string;
+  /** «Цагтаа тарсан» / «25 мин эрт тарсан». */
+  leaveStatus?: string;
+  /** Left before the shift ended. */
+  leftEarly?: boolean;
 }
 
 export interface TimeSettings {
   startTime: string; // HH:mm
+  /**
+   * When the shift ends — `18:30` unless the shop says otherwise.
+   *
+   * Optional because every record written before clock-out existed lacks it;
+   * readers fall back to `DEFAULT_END`.
+   */
+  endTime?: string;
   penaltyPerMin: number;
   onTimeScore: number;
   onLeaveScore: number;
   workingDays: number;
+  /**
+   * What a perfect month is worth, in tögrög.
+   *
+   * Absent on records written before the manager could set it, which is why
+   * every reader falls back to `MAX_MONTHLY_BONUS`.
+   */
+  maxBonus?: number;
 }
 
 /** `restDays` uses JS weekday indices: 0 = Sunday … 6 = Saturday. */
@@ -180,6 +206,23 @@ export interface Employee {
   name: string;
   pin: string;
   restDays: number[];
+
+  /**
+   * The staff profile.
+   *
+   * Every field optional: the roster predates them, and a person with no
+   * profile filled in still has to be able to clock in and be paid.
+   */
+  phone?: string;
+  /** `YYYY-MM-DD`. */
+  birthDate?: string;
+  address?: string;
+  emergencyName?: string;
+  emergencyPhone?: string;
+  /** `YYYY-MM-DD` they started; the app derives length of service from it. */
+  startDate?: string;
+  /** `data:image/jpeg;base64,…`, compressed like every other photo here. */
+  photo?: string;
 }
 
 // ─────────────────────────── Performance ───────────────────────────
@@ -308,7 +351,18 @@ export interface ChatMessage {
 // ─────────────────────────── Reports ───────────────────────────
 
 export interface DailyReport {
+  /** Money actually taken. Excludes anything marked «Тооцоотой». */
   totalRevenue: number;
+  /**
+   * Booked on account and not yet paid.
+   *
+   * Kept out of `totalRevenue` because the day's takings are what the till
+   * should hold, and a job handed over against an invoice puts nothing in it.
+   * Reported rather than dropped: it is still owed.
+   */
+  totalUnsettled: number;
+  /** How many of the day's jobs are the unpaid ones. */
+  unsettledCount: number;
   totalTransfer: number;
   totalCash: number;
   totalCard: number;
@@ -340,7 +394,13 @@ export type RemoteKey =
   /** Issued invoice numbers, one node per number — a shared claim registry. */
   | 'invoices'
   /** One push token per install, so the server knows where to send alerts. */
-  | 'devices';
+  | 'devices'
+  /** The day's petty spending — lunch, water, a taxi. */
+  | 'expenses'
+  /** Notices the manager posts for the shop to read. */
+  | 'announcements'
+  /** Sheets drawn off the shelf, one row per entry. */
+  | 'usage';
 
 /**
  * A device that can receive push notifications.
@@ -355,6 +415,72 @@ export interface PushDevice {
   role: string;
   platform: string;
   updatedAt: number;
+}
+
+/** The day's petty spending, kept apart from the takings. */
+export type ExpenseCategory = 'food' | 'water' | 'transport' | 'supplies' | 'other';
+
+/**
+ * Something the manager wants the shop to know — a plan for the day, a change
+ * of hours, a job to watch out for.
+ *
+ * Read state lives on the announcement rather than per device: the shop is
+ * four people, and «who has seen it» is a question the manager asks about
+ * names, not handsets.
+ */
+export interface Announcement {
+  id: number;
+  /** `YYYY-MM-DD` it was posted. */
+  date: string;
+  title: string;
+  body: string;
+  /** Who posted it. */
+  by: string;
+  at: number;
+  /** Names that have opened it. */
+  readBy?: string[];
+}
+
+export interface Expense {
+  id: number;
+  /** `YYYY-MM-DD` the money was spent. */
+  date: string;
+  category: ExpenseCategory;
+  /** Whole tögrög. */
+  amount: number;
+  note: string;
+  /** Who entered it — a worker's name, or the role when nobody is named. */
+  by: string;
+  at: number;
+}
+
+/**
+ * A day's draw on the shelf — «A4 цаас, 250ш».
+ *
+ * Written alongside the stock change rather than derived from it: the stock
+ * figure answers "have we any left", this answers "how fast do we get through
+ * it", and a shop that only kept the first can never order ahead.
+ */
+export interface StockUsage {
+  id: number;
+  /** `YYYY-MM-DD`. */
+  date: string;
+  itemId: number;
+  /** Copied from the item, so a renamed or deleted row keeps its history. */
+  itemName: string;
+  quantity: number;
+  note: string;
+  by: string;
+  at: number;
+  /**
+   * The work log this draw was booked against, when it was automatic.
+   *
+   * Absent on a line somebody typed into Зарцуулалт by hand. Its presence is
+   * what lets an order's edit or deletion find its own paper again and put it
+   * back — without it, correcting a quantity would leave the shelf short by
+   * the original amount for ever.
+   */
+  logId?: number;
 }
 
 export type AsyncState = 'idle' | 'loading' | 'success' | 'error';

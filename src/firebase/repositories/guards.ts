@@ -123,5 +123,30 @@ export const isHabitTask = (raw: unknown): boolean =>
   optionalBool(raw.done) &&
   optionalStr(raw.type);
 
+export const isExpense = (raw: unknown): boolean =>
+  hasValidId(raw) &&
+  isRecord(raw) &&
+  optionalStr(raw.date) &&
+  optionalStr(raw.category) &&
+  numberish(raw.amount) &&
+  optionalStr(raw.note) &&
+  optionalStr(raw.by);
+
+export const isAnnouncement = (raw: unknown): boolean =>
+  hasValidId(raw) &&
+  isRecord(raw) &&
+  optionalStr(raw.date) &&
+  optionalStr(raw.title) &&
+  optionalStr(raw.body) &&
+  optionalStr(raw.by);
+
+export const isStockUsage = (raw: unknown): boolean =>
+  hasValidId(raw) &&
+  isRecord(raw) &&
+  optionalStr(raw.date) &&
+  numberish(raw.itemId) &&
+  optionalStr(raw.itemName) &&
+  numberish(raw.quantity);
+
 /** Colour labels and calculator types are little more than id + label. */
 export const isSimpleRecord = (raw: unknown): boolean => hasValidId(raw);

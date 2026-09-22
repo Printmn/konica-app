@@ -16,6 +16,8 @@ import { useData } from '@/features/data/DataContext';
 import {
   applyWorkLogEdit,
   archiveDates,
+  boardFilterCounts,
+  filterBoard,
   createWorkLog,
   emptyWorkLogForm,
   groupWorkLogsByDate,
@@ -29,17 +31,23 @@ import { useConfirmAction } from '@/hooks/useConfirmAction';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useToast } from '@/hooks/useToast';
 import type { RootStackParamList } from '@/navigation/types';
+import { unreadCount as unreadNoticeCount } from '@/features/announcements/announcementLogic';
+import { syncPaperUsage, usageForLog } from '@/features/inventory/stockUsage';
 import { exportDailyWorkLogs } from '@/services/export/excelService';
 import { notifyNewOrder } from '@/services/notifications/notificationService';
 import { notifyNewWorkLog } from '@/services/telegram/telegramService';
 import { useAppTheme } from '@/theme/ThemeProvider';
 import type { WorkLogGroup } from '@/features/worklogs/workLogLogic';
+import type { BoardFilter } from '@/features/worklogs/workLogLogic';
 import type { DocType, WorkLog, WorkLogForm as FormShape, WorkStatus } from '@/types';
 import { DAY_LABELS_MN, todayString, weekdayOf } from '@/utils/date';
-import { rawTotal } from '@/features/reports/reportCalculator';
+import { calculateDailyReport, isUnsettled, rawTotal } from '@/features/reports/reportCalculator';
 import { formatCurrency } from '@/utils/price';
 
 import { CalculatorTab } from './components/CalculatorTab';
+import { ExpensesTab } from './components/ExpensesTab';
+import { ArchiveRow } from './components/ArchiveRow';
+import { DayTotalsCard } from './components/DayTotalsCard';
 import { WorkLogCard } from './components/WorkLogCard';
 import { WorkLogForm } from './components/WorkLogForm';
 
@@ -59,7 +67,7 @@ import { WorkLogForm } from './components/WorkLogForm';
  */
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type Tab = 'worklogs' | 'calculator';
+type Tab = 'worklogs' | 'calculator' | 'expenses';
 
 /** A day heading, or a job under one. */
 type BoardRow =
@@ -69,12 +77,52 @@ type BoardRow =
 /** How long a submit stays locked after a successful save. */
 const SUBMIT_LOCK_MS = 1200;
 
+/**
+ * The three loose ends, and what each is called on screen.
+ *
+ * Short labels because four segments have to fit across a phone: the chip says
+ * «Аваагүй», the header says «Болсон аваагүй». Both are needed — the chip has
+ * room for a word, the header has room for the truth.
+ */
+/** Reading order: the day's work first, then the three things left over. */
+const FILTER_ROWS: readonly (readonly BoardFilter[])[] = [
+  ['all', 'notPicked'],
+  ['settlement', 'tomorrow'],
+];
+
+const FILTERS: Record<
+  Exclude<BoardFilter, 'all'>,
+  { chip: string; title: string; noun: string; icon: string; emptyHint: string }
+> = {
+  notPicked: {
+    chip: 'Аваагүй',
+    title: 'Болсон аваагүй',
+    noun: 'аваагүй',
+    icon: '📦',
+    emptyHint: 'Бүх захиалга хүлээлгэн өгөгдсөн байна',
+  },
+  settlement: {
+    chip: 'Тооцоо',
+    title: 'Тооцоотой',
+    noun: 'тооцоотой',
+    icon: '🧾',
+    emptyHint: 'Тооцоо хийгдээгүй захиалга алга',
+  },
+  tomorrow: {
+    chip: 'Маргааш',
+    title: 'Маргааш авна',
+    noun: 'маргааш',
+    icon: '📅',
+    emptyHint: 'Хойшлуулсан захиалга алга',
+  },
+};
+
 export function OrdersScreen(): React.JSX.Element {
   const theme = useAppTheme();
   const onBack = useScreenBack();
   const navigation = useNavigation<Nav>();
   const { show, showError } = useToast();
-  const { can } = useAuth();
+  const { can, role, workerName } = useAuth();
   const { gutter } = useResponsive();
 
   const {
@@ -82,6 +130,9 @@ export function OrdersScreen(): React.JSX.Element {
     setWorkLogs,
     services,
     inventory,
+    setInventory,
+    usage,
+    setUsage,
     calcTypes,
     setCalcTypes,
     isOffline,
@@ -89,6 +140,7 @@ export function OrdersScreen(): React.JSX.Element {
     syncError,
     syncNow,
     isHydrating,
+    announcements,
   } = useData();
 
   const [tab, setTab] = useState<Tab>('worklogs');
@@ -100,36 +152,94 @@ export function OrdersScreen(): React.JSX.Element {
   const listRef = useRef<FlatList<BoardRow>>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormShape>(emptyWorkLogForm);
+  /**
+   * Bumped every time the form is blanked, and folded into its `key`.
+   *
+   * The counter iPad keeps this form open, so a reset replaces the values in a
+   * component that never unmounts — and the form's intake clock decides whether
+   * it may keep ticking by remembering the stamp it last wrote. Remounting is
+   * how "this is a different booking now" gets said in a way that reaches that
+   * memory; without it, booking one job stops the clock for the next.
+   */
+  const [formSeq, setFormSeq] = useState(0);
   /** The job being corrected, or `null` when the form is booking a new one. */
   const [editingId, setEditingId] = useState<number | null>(null);
   const [archiveDate, setArchiveDate] = useState<string | null>(null);
+  /** Which loose end the board is showing, or `all` for the day's work. */
+  const [filter, setFilter] = useState<BoardFilter>('all');
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState<{ id: number; note: string } | null>(null);
 
   const { armedId, confirm } = useConfirmAction();
 
+  /** A blank form, and a new identity for it. */
+  const resetForm = useCallback(() => {
+    setForm(emptyWorkLogForm());
+    setFormSeq((previous) => previous + 1);
+  }, []);
+
+
   /**
-   * Opening the tab opens the form.
+   * The iPad opens straight into the form; the manager does not.
    *
-   * Booking a job is what this tab is for — the board was one tap away from
-   * every new order, and that tap was being paid dozens of times a day. The
-   * form now opens on focus; closing it reveals the board underneath, and the
-   * board stays put until the tab is left and come back to.
+   * On the counter iPad the form *is* the screen — somebody is standing there
+   * waiting, and a tap on «+» before every order is a tap paid dozens of times
+   * a day. The manager opens this tab to look at what is on, so for them the
+   * board comes first and the «+» button is one tap when they need it.
    */
   useFocusEffect(
     useCallback(() => {
       setTab('worklogs');
       setEditingId(null);
-      setForm(emptyWorkLogForm());
-      setShowForm(true);
-    }, []),
+      setFilter('all');
+      if (role === 'ipad') {
+        resetForm();
+        setShowForm(true);
+      } else {
+        setShowForm(false);
+      }
+    }, [role, resetForm]),
   );
 
   const today = todayString();
-  const logs = useMemo(
-    () => visibleWorkLogs(workLogs, archiveDate, today),
-    [workLogs, archiveDate, today],
+
+  /** Unread notices, badged on the bell in this screen's header. */
+  const unreadNotices = useMemo(
+    () => unreadNoticeCount(announcements, workerName || role || ''),
+    [announcements, workerName, role],
   );
+
+  /**
+   * The chip counts, computed whether or not a chip is on.
+   *
+   * The number is most of the point: a shop with nothing on the shelf and
+   * nothing owed should be able to see that without tapping anything.
+   */
+  const counts = useMemo(() => boardFilterCounts(workLogs), [workLogs]);
+
+  const logs = useMemo(
+    () =>
+      filter === 'all'
+        ? visibleWorkLogs(workLogs, archiveDate, today)
+        : filterBoard(workLogs, filter),
+    [filter, workLogs, archiveDate, today],
+  );
+
+  /**
+   * Compact rows, and which way the cards are numbered.
+   *
+   * A finished day is read rather than worked, so the archive gets the report's
+   * one-line rows. A filtered list is the opposite: every row on it is
+   * something somebody still has to *do* — chase a customer, take a payment —
+   * so it keeps the full card with its status buttons and phone number.
+   *
+   * Both are fixed lists read top to bottom, so both count up from 1 like the
+   * report does, and since a filtered list spans months each card carries its
+   * date. Only the live board counts down, so that the newest job keeps its
+   * number as work is added underneath it.
+   */
+  const compact = filter === 'all' && archiveDate !== null;
+  const numbered = filter !== 'all' || archiveDate !== null;
   /**
    * The board as a flat list of day headings and cards.
    *
@@ -170,7 +280,94 @@ export function OrdersScreen(): React.JSX.Element {
     }
     return counts;
   }, [workLogs]);
-  const dayTotal = useMemo(() => rawTotal(logs), [logs]);
+  /**
+   * The takings belong to the day the job was booked, not the day it is read.
+   *
+   * The board deliberately carries unfinished work forward, and the header was
+   * summing everything on screen — so a job booked yesterday and still marked
+   * «Маргааш авна» had its money counted again today. The daily report and the
+   * Excel export were already filtering by date; this was the one place that
+   * double-counted, which is worse than being plainly wrong: the two figures
+   * disagreed and neither said why.
+   *
+   * Carried-over rows are still on the board, and still counted — as a
+   * separate figure, so it is obvious they are not part of the day's money.
+   */
+  const dayLogs = useMemo(
+    () => logs.filter((log) => log.date === (archiveDate ?? today)),
+    [logs, archiveDate, today],
+  );
+  /**
+   * The day's money, split by whether it actually arrived.
+   *
+   * Work booked «Тооцоотой» is handed over against an invoice, so counting it
+   * here said the till held money it did not. It stays on screen — it is owed,
+   * not forgotten — but on its own figure.
+   */
+  const dayTotal = useMemo(
+    () => rawTotal(dayLogs.filter((log) => !isUnsettled(log))),
+    [dayLogs],
+  );
+  const dayOwed = useMemo(() => rawTotal(dayLogs.filter(isUnsettled)), [dayLogs]);
+
+  /**
+   * The archived day's takings, split by how it was settled.
+   *
+   * Straight from `calculateDailyReport` — the same function behind the report
+   * screen and the Excel export. Summing it again here is how two screens end
+   * up disagreeing about a Tuesday.
+   */
+  const archiveReport = useMemo(
+    () => calculateDailyReport(workLogs, archiveDate ?? today),
+    [workLogs, archiveDate, today],
+  );
+  const carriedOver = logs.length - dayLogs.length;
+
+  /**
+   * Switching what the board is showing.
+   *
+   * Shared by all four cells rather than written into each: turning a filter on
+   * has three consequences beyond the filter itself, and four copies of them is
+   * how one cell quietly stops closing the form.
+   */
+  const selectFilter = useCallback((next: BoardFilter) => {
+    setFilter(next);
+    if (next === 'all') return;
+    // A filter spans every day, so an archive date underneath it would only
+    // contradict the heading.
+    setArchiveDate(null);
+    // And booking a new job is not what anybody came here to do: these lists
+    // are read to chase things already on them. A half-typed draft would also
+    // survive the switch and reappear under a heading it has nothing to do
+    // with.
+    setShowForm(false);
+    setEditingId(null);
+  }, []);
+
+  /**
+   * Keeps the paper shelf in step with an order.
+   *
+   * Booking «Бичгийн цаас А4 (10ш)» takes ten sheets off; correcting the
+   * quantity puts the old draw back before taking the new one; deleting the
+   * order returns the paper. All three go through `syncPaperUsage`, which
+   * finds the previous automatic row by `logId` — so this cannot double-count,
+   * and it never touches a line somebody typed into Зарцуулалт by hand.
+   */
+  const syncPaper = useCallback(
+    (
+      logId: number,
+      log: { job?: string; quantity?: string | number; date?: string } | null,
+    ) => {
+      const result = syncPaperUsage(usage, inventory, logId, log, workerName || role || '');
+      // Written back only when something moved: an order for a mug must not
+      // rewrite the whole inventory collection on every save.
+      if (result.drawn === null && usageForLog(usage, logId) === undefined) return null;
+      setUsage(() => result.usage);
+      setInventory(() => result.inventory);
+      return result.drawn;
+    },
+    [usage, inventory, workerName, role, setUsage, setInventory],
+  );
 
   const canEdit = can('editWorkLogs');
   const canDelete = can('deleteWorkLogs');
@@ -180,8 +377,8 @@ export function OrdersScreen(): React.JSX.Element {
   const closeForm = useCallback(() => {
     setShowForm(false);
     setEditingId(null);
-    setForm(emptyWorkLogForm());
-  }, []);
+    resetForm();
+  }, [resetForm]);
 
   /** Reopens a booked job in the same form it was entered through. */
   const handleEdit = useCallback((log: WorkLog) => {
@@ -216,20 +413,35 @@ export function OrdersScreen(): React.JSX.Element {
       setWorkLogs((previous) =>
         previous.map((log) => (log.id === editingId ? applyWorkLogEdit(log, form) : log)),
       );
+      const edited = workLogs.find((log) => log.id === editingId);
+      const drawn = syncPaper(editingId, {
+        job: form.job,
+        quantity: form.quantity,
+        ...(edited?.date === undefined ? {} : { date: edited.date }),
+      });
       closeForm();
-      show('Хадгаллаа', 'success');
+      show(
+        drawn === null ? 'Хадгаллаа' : `Хадгаллаа · ${drawn.name} ${drawn.sheets}ш`,
+        'success',
+      );
       return;
     }
 
     const log = createWorkLog(form, workLogs, today);
     setWorkLogs((previous) => [log, ...previous]);
+    const drawn = syncPaper(log.id, { job: log.job, quantity: form.quantity, date: log.date });
     closeForm();
 
     // Alerts are fire-and-forget; a failed notification must not block the save.
     void notifyNewWorkLog(log);
     void notifyNewOrder(log);
-    show('Ажил бүртгэгдлээ', 'success');
-  }, [form, workLogs, today, editingId, setWorkLogs, show, closeForm]);
+    show(
+      drawn === null
+        ? 'Ажил бүртгэгдлээ'
+        : `Ажил бүртгэгдлээ · ${drawn.name} ${drawn.sheets}ш хасагдлаа`,
+      'success',
+    );
+  }, [form, workLogs, today, editingId, setWorkLogs, show, closeForm, syncPaper]);
 
   const updateLog = useCallback(
     (id: number, patch: Partial<WorkLog>) => {
@@ -249,10 +461,13 @@ export function OrdersScreen(): React.JSX.Element {
     (id: number) => {
       confirm(id, (confirmedId) => {
         setWorkLogs((previous) => previous.filter((log) => log.id !== confirmedId));
-        show('Устгалаа');
+        // Deleting the order returns its paper: a job booked and cancelled
+        // must not leave the shelf permanently short.
+        const returned = syncPaper(confirmedId, null);
+        show(returned === null ? 'Устгалаа' : 'Устгалаа · цаас буцаагдлаа');
       });
     },
-    [confirm, setWorkLogs, show],
+    [confirm, setWorkLogs, show, syncPaper],
   );
 
   const handleCreateDocument = useCallback(
@@ -323,19 +538,63 @@ export function OrdersScreen(): React.JSX.Element {
       <ScreenHeader
         title="Захиалга"
         onBack={onBack}
-        subtitle={archiveDate ? `Архив · ${archiveDate}` : `Өнөөдөр · ${today}`}
+        subtitle={
+          filter !== 'all'
+            ? `${FILTERS[filter].title} · ${logs.length} ажил`
+            : archiveDate
+              ? `Архив · ${archiveDate}`
+              : `Өнөөдөр · ${today}`
+        }
         // Orders is where the app opens now, so the way into Settings has to
         // live here — it used to hang off the Нүүр screen, which is no longer
         // in the bar.
         right={
-          <Pressable
-            onPress={() => navigation.navigate('Settings')}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Тохиргоо"
-          >
-            <Icon source="cog-outline" size={22} color="#ffffff" />
-          </Pressable>
+          <View style={styles.headerIcons}>
+            {/* The staff screen — attendance, the day's spending, the scores.
+                It has no tab of its own on this role's bar, and the manager
+                lives on this screen, so this is the only place a way in
+                actually gets used. */}
+            {can('viewAttendance') ? (
+              <Pressable
+                onPress={() => navigation.navigate('Main', { screen: 'Staff' })}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Ажилтан"
+              >
+                <Icon source="account-group" size={22} color="#ffffff" />
+              </Pressable>
+            ) : null}
+
+            {/* Мэдээлэл. The bell is on the worker's bar but the manager's is
+                full, so their way in is here — beside the other two doors this
+                screen already holds open. Without it the person who *writes*
+                the notices was the only one who could not reach them. */}
+            {can('viewAttendance') ? (
+              <Pressable
+                onPress={() => navigation.navigate('Main', { screen: 'Notices' })}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  unreadNotices > 0 ? `Мэдээлэл, ${unreadNotices} шинэ` : 'Мэдээлэл'
+                }
+              >
+                <View>
+                  <Icon source="bell" size={22} color="#ffffff" />
+                  {unreadNotices > 0 ? (
+                    <View style={[styles.bellDot, { backgroundColor: theme.colors.error }]} />
+                  ) : null}
+                </View>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => navigation.navigate('Settings')}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Тохиргоо"
+            >
+              <Icon source="cog-outline" size={22} color="#ffffff" />
+            </Pressable>
+          </View>
         }
       />
 
@@ -350,11 +609,88 @@ export function OrdersScreen(): React.JSX.Element {
           onValueChange={(value) => setTab(value)}
           density="small"
           buttons={[
-            { value: 'worklogs', label: 'Ажлын бүртгэл', icon: 'clipboard-text' },
+            // Shortened from «Ажлын бүртгэл»: a third segment leaves each one
+            // a third of the width, and the longer label clipped mid-word.
+            { value: 'worklogs', label: 'Бүртгэл', icon: 'clipboard-text' },
             { value: 'calculator', label: 'Тооцоолол', icon: 'calculator' },
+            { value: 'expenses', label: 'Зарлага', icon: 'cash-minus' },
           ]}
         />
       </View>
+
+      {/* The three loose ends, counted — two by two.
+          Four across a phone left «Аваагүй 12» three characters wide and the
+          count, which is most of the point, was the part that got truncated.
+          A 2×2 block gives every cell half the screen. */}
+      {tab === 'worklogs' ? (
+        <View style={[styles.filterGrid, { paddingHorizontal: gutter }]}>
+          {FILTER_ROWS.map((row, rowIndex) => (
+            <View key={rowIndex} style={styles.filterRow}>
+              {row.map((key) => {
+                const active = filter === key;
+                const count = key === 'all' ? null : counts[key];
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => selectFilter(key)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    style={({ pressed }) => [
+                      styles.filterCell,
+                      {
+                        backgroundColor: active
+                          ? theme.colors.primary
+                          : theme.custom.cardBackground,
+                        borderColor: active ? theme.colors.primary : theme.custom.subtleBorder,
+                      },
+                      pressed && styles.filterPressed,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.filterLabel,
+                        { color: active ? theme.colors.onPrimary : theme.colors.onSurface },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {key === 'all' ? 'Бүгд' : `${FILTERS[key].icon} ${FILTERS[key].chip}`}
+                    </Text>
+                    {count === null ? null : (
+                      <View
+                        style={[
+                          styles.filterBadge,
+                          {
+                            backgroundColor: active
+                              ? theme.colors.onPrimary
+                              : count > 0
+                                ? theme.colors.primary
+                                : theme.custom.subtleBorder,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.filterBadgeText,
+                            {
+                              color: active
+                                ? theme.colors.primary
+                                : count > 0
+                                  ? theme.colors.onPrimary
+                                  : theme.custom.mutedText,
+                            },
+                          ]}
+                        >
+                          {count}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View style={[styles.body, { paddingHorizontal: gutter }]}>
         {tab === 'worklogs' ? (
@@ -375,14 +711,36 @@ export function OrdersScreen(): React.JSX.Element {
               <View style={styles.listHeader}>
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryText, { color: theme.custom.mutedText }]}>
-                    {logs.length} ажил · {formatCurrency(dayTotal)}
+                    {filter !== 'all' ? (
+                      // Not a day's takings — the money tied up in whatever the
+                      // chip is showing. Counted so the pile has a size.
+                      <>
+                        {logs.length} {FILTERS[filter].noun} ·{' '}
+                        {formatCurrency(rawTotal(logs))}
+                      </>
+                    ) : (
+                      <>
+                        {dayLogs.length} ажил · {formatCurrency(dayTotal)}
+                        {dayOwed > 0 ? (
+                          <Text style={[styles.summaryCarried, { color: theme.colors.error }]}>
+                            {'  '}🧾 {formatCurrency(dayOwed)} тооцоотой
+                          </Text>
+                        ) : null}
+                        {carriedOver > 0 ? (
+                          <Text style={[styles.summaryCarried, { color: theme.colors.error }]}>
+                            {'  '}+{carriedOver} өмнөх захиалга
+                          </Text>
+                        ) : null}
+                      </>
+                    )}
                   </Text>
                   <View style={styles.headerActions}>
+
                     {/* Only the export stays on the board: it sends whatever is
                         on screen. Looking a day up and reading the takings are
                         both questions asked *after* the work, so they moved to
                         the Тооцоолол tab with the rest of the arithmetic. */}
-                    {can('exportData') && logs.length > 0 ? (
+                    {can('exportData') && logs.length > 0 && filter === 'all' ? (
                       <Button
                         mode="text"
                         compact
@@ -396,19 +754,27 @@ export function OrdersScreen(): React.JSX.Element {
                 </View>
 
                 {archiveDate ? (
-                  <Button mode="outlined" compact onPress={() => setArchiveDate(null)}>
-                    ← Өнөөдөр рүү буцах
-                  </Button>
+                  <>
+                    <Button mode="outlined" compact onPress={() => setArchiveDate(null)}>
+                      ← Өнөөдөр рүү буцах
+                    </Button>
+
+                    {/* The archive is opened to ask what a past day took, so
+                        the answer goes above the rows rather than behind
+                        another tab. */}
+                    <DayTotalsCard report={archiveReport} date={archiveDate} />
+                  </>
                 ) : null}
 
-                {showForm && canEdit && editingId !== null ? (
+                {filter === 'all' && showForm && canEdit && editingId !== null ? (
                   <Text style={[styles.editingBanner, { color: theme.colors.primary }]}>
                     ✏️ Засварлаж байна — {form.job || 'нэргүй ажил'}
                   </Text>
                 ) : null}
 
-                {showForm && canEdit ? (
+                {filter === 'all' && showForm && canEdit ? (
                   <WorkLogForm
+                    key={editingId === null ? `new-${formSeq}` : `edit-${editingId}`}
                     form={form}
                     onChange={setForm}
                     onSubmit={submitForm}
@@ -416,6 +782,7 @@ export function OrdersScreen(): React.JSX.Element {
                     services={services}
                     inventory={inventory}
                     submitLabel={editingId === null ? 'Бүртгэх' : 'Хадгалах'}
+                    autoTime={editingId === null}
                   />
                 ) : null}
               </View>
@@ -423,9 +790,21 @@ export function OrdersScreen(): React.JSX.Element {
             ListEmptyComponent={
               isHydrating ? null : (
                 <EmptyState
-                  icon="📋"
-                  title={archiveDate ? 'Энэ өдрийн бүртгэл олдсонгүй' : 'Ажил бүртгэгдээгүй байна'}
-                  hint={canEdit ? 'Доорх + товчоор шинэ ажил нэмнэ үү' : undefined}
+                  icon={filter !== 'all' ? FILTERS[filter].icon : '📋'}
+                  title={
+                    filter !== 'all'
+                      ? `${FILTERS[filter].title} ажил алга`
+                      : archiveDate
+                        ? 'Энэ өдрийн бүртгэл олдсонгүй'
+                        : 'Ажил бүртгэгдээгүй байна'
+                  }
+                  hint={
+                    filter !== 'all'
+                      ? FILTERS[filter].emptyHint
+                      : canEdit
+                        ? 'Доорх + товчоор шинэ ажил нэмнэ үү'
+                        : undefined
+                  }
                 />
               )
             }
@@ -456,12 +835,28 @@ export function OrdersScreen(): React.JSX.Element {
                     ]}
                   />
                 </View>
+              ) : compact ? (
+                /* A finished day is read rather than worked: the status
+                   buttons, the note and the document menu are decisions
+                   nobody is still making there. */
+                <ArchiveRow
+                  log={item.log}
+                  ordinal={item.index + 1}
+                  today={today}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  isDeleteArmed={armedId === item.log.id}
+                />
               ) : (
                 <WorkLogCard
                   log={item.log}
                   index={item.index}
                   total={logs.length}
                   today={today}
+                  {...(numbered ? { ordinal: item.index + 1 } : {})}
+                  dateTag={numbered ? item.log.date.slice(5).replace('-', '/') : undefined}
                   canEdit={canEdit}
                   canDelete={canDelete}
                   onStatusChange={handleStatusChange}
@@ -474,6 +869,17 @@ export function OrdersScreen(): React.JSX.Element {
               )
             }
           />
+        ) : tab === 'expenses' ? (
+          /* The day's spending, against the day's takings. `archiveReport`
+             rather than a fresh sum: the figure it subtracts from has to be the
+             same one the report and the archive card show, or the shop ends up
+             with two versions of what a Tuesday cleared. */
+          <ExpensesTab
+            date={archiveDate ?? today}
+            revenue={archiveReport.totalRevenue}
+            by={workerName || role || ''}
+            canEdit={canEdit}
+          />
         ) : (
           <CalculatorTab
             calcTypes={calcTypes}
@@ -485,17 +891,25 @@ export function OrdersScreen(): React.JSX.Element {
                 ? () => navigation.navigate('Main', { screen: 'Report' })
                 : undefined
             }
-            onOpenArchive={() => setArchiveOpen(true)}
+            onOpenArchive={
+              can('viewReport') ? () => setArchiveOpen(true) : undefined
+            }
             archiveDate={archiveDate}
           />
         )}
       </View>
 
-      {tab === 'worklogs' && canEdit && !showForm ? (
+      {tab === 'worklogs' && filter === 'all' && canEdit && !showForm ? (
         <FAB
           icon="plus"
           style={styles.fab}
-          onPress={() => setShowForm(true)}
+          onPress={() => {
+            // A clean form every time. The screen no longer wipes it on focus,
+            // so without this an abandoned draft would reappear days later.
+            setEditingId(null);
+            resetForm();
+            setShowForm(true);
+          }}
           accessibilityLabel="Шинэ ажил нэмэх"
         />
       ) : null}
@@ -622,7 +1036,41 @@ const styles = StyleSheet.create({
   listHeader: { gap: 10, paddingBottom: 10 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   summaryText: { fontSize: 12, fontWeight: '700' },
+  /** Carried-over work: on the board, but not in the day's money. */
+  summaryCarried: { fontSize: 12, fontWeight: '800' },
   headerActions: { flexDirection: 'row' },
+  filterGrid: { paddingBottom: 8, gap: 6 },
+  filterRow: { flexDirection: 'row', gap: 6 },
+  filterCell: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+  },
+  filterPressed: { opacity: 0.7 },
+  filterLabel: { fontSize: 12, fontWeight: '800' },
+  filterBadge: {
+    minWidth: 20,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 9,
+    alignItems: 'center',
+  },
+  filterBadgeText: { fontSize: 11, fontWeight: '900' },
+  bellDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   separator: { height: 10 },
   /** A day heading: the label, then a rule that runs to the edge. */
   dayHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 6 },
