@@ -759,10 +759,15 @@ export function OrdersScreen(): React.JSX.Element {
                       ← Өнөөдөр рүү буцах
                     </Button>
 
-                    {/* The archive is opened to ask what a past day took, so
-                        the answer goes above the rows rather than behind
-                        another tab. */}
-                    <DayTotalsCard report={archiveReport} date={archiveDate} />
+                    {/* The takings card, not the archive itself.
+                        `viewArchive` opens the day's jobs — that is the
+                        counter's tool, asked with a customer standing there.
+                        What the day *earned* is a different question and keeps
+                        the manager-only rule, or hiding the report screen from
+                        a tablet left face-up would achieve nothing. */}
+                    {can('viewReport') ? (
+                      <DayTotalsCard report={archiveReport} date={archiveDate} />
+                    ) : null}
                   </>
                 ) : null}
 
@@ -892,7 +897,7 @@ export function OrdersScreen(): React.JSX.Element {
                 : undefined
             }
             onOpenArchive={
-              can('viewReport') ? () => setArchiveOpen(true) : undefined
+              can('viewArchive') ? () => setArchiveOpen(true) : undefined
             }
             archiveDate={archiveDate}
           />

@@ -211,8 +211,8 @@ export function DailyScreen(): React.JSX.Element {
                   </Text>
                   {log.completedTaskCount > 0 ? (
                     <Text style={[styles.logTasks, { color: theme.custom.mutedText }]}>
-                      ✓ {log.completedTaskCount}/{log.totalTaskCount} ажил ·{' '}
-                      {log.completedScore || 0} оноо
+                      ✓ {log.completedTaskCount}/{log.totalTaskCount} ажил
+                      {canViewScores ? ` · ${log.completedScore || 0} оноо` : ''}
                     </Text>
                   ) : null}
                 </View>

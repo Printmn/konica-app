@@ -41,6 +41,8 @@ import { nowTimeString, timeToMinutes, todayString } from '@/utils/date';
 export function ArrivalCard(): React.JSX.Element {
   const theme = useAppTheme();
   const { role, workerName, can } = useAuth();
+  /** Points are the manager's to read; staff tick, they do not tally. */
+  const canViewScores = can('viewScores');
   const { show } = useToast();
   const { employees, tasks, setTasks, attendanceLogs, setAttendanceLogs, timeSettings } =
     useData();
@@ -311,7 +313,7 @@ export function ArrivalCard(): React.JSX.Element {
             is the record and it still feeds the month — but watching a number
             climb turns habits into a score to game rather than a list to
             do. */}
-        {can('viewScores') ? (
+        {canViewScores ? (
           <Text style={[styles.scoreBadge, { color: theme.colors.primary }]}>
             {earned}/{dailyMax} ⭐
           </Text>
@@ -353,7 +355,12 @@ export function ArrivalCard(): React.JSX.Element {
                 {task.text}
               </Text>
               <Text style={styles.habitType}>{task.type === 'cleaning' ? '🧹' : '⚡'}</Text>
-              <Text style={styles.habitScore}>+{task.score || 1}⭐</Text>
+              {/* What each habit is worth is the manager's arithmetic. Printed
+                  on every row it turns a list of things to do into a menu
+                  priced by effort, and the cheap ones stop getting done. */}
+              {canViewScores ? (
+                <Text style={styles.habitScore}>+{task.score || 1}⭐</Text>
+              ) : null}
             </Pressable>
           );
         })

@@ -16,6 +16,8 @@ export type Capability =
   | 'viewInventory'
   | 'viewServices'
   | 'viewReport'
+  | 'viewArchive'
+  | 'viewMonthTotals'
   | 'viewPerformance'
   | 'viewQuotation'
   | 'viewAdmin'
@@ -39,15 +41,29 @@ const MATRIX: Readonly<Record<Capability, readonly Role[]>> = {
   // hidden tabs would still be reachable by a stray `navigate`.
   viewInventory: ['manager', 'ipad'],
   viewServices: ['manager', 'ipad'],
+  /** The report screen: a day's takings, its jobs, and the Excel export. */
+  viewReport: ['manager', 'ipad'],
   /**
-   * The day's takings and the days before it.
+   * The month's running totals — the САРЫН НЭГТГЭЛ panel.
    *
-   * Manager only. The counter iPad is a shared device in a public room — it
-   * is left face-up while somebody fetches a job — and what the shop earned
-   * last Tuesday is not something a customer should be able to read over the
-   * counter. Booking work needs none of it.
+   * Manager only, where the day is not. A day's takings are something the
+   * counter reconciles against the till at closing, so hiding them from the
+   * device the till sits next to helps nobody. The month is a different
+   * figure: it is the shop's turnover, it is on screen for weeks at a time,
+   * and the iPad is left face-up in a public room while somebody fetches a
+   * job. One is a tool, the other is an accidental disclosure.
    */
-  viewReport: ['manager'],
+  viewMonthTotals: ['manager'],
+  /**
+   * Looking a past day's *jobs* up — the archive picker on the board.
+   *
+   * Separate from `viewReport`, because they are separate questions. «What
+   * did we take on the fourth» is the shop's business; «was this customer's
+   * banner booked last Tuesday» is the counter's, and it is asked with the
+   * customer standing there. Folding the two together took a daily tool off
+   * the iPad to hide a figure the archive does not show in the first place.
+   */
+  viewArchive: ['manager', 'ipad'],
   // Scores and the month's bonus, same rule as `viewScores`.
   viewPerformance: ['manager'],
   viewQuotation: ['manager', 'ipad'],

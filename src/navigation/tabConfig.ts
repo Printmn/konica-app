@@ -195,9 +195,7 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
     key: 'report',
     label: 'Тайлан',
     icon: 'format-list-bulleted',
-    // Manager only, like `viewReport`. The sidebar is the tablet's way in and
-    // would otherwise hand the counter the door the tab bar just closed.
-    roles: ['manager'],
+    roles: ['manager', 'ipad'],
     tab: 'Report',
   },
   {
